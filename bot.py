@@ -1067,4 +1067,17 @@ if __name__ == "__main__":
         print(f"Проверка цен запущена (каждые {PRICE_CHECK_INTERVAL // 60} мин).")
     else:
         print("[внимание] JobQueue недоступен — фоновые уведомления не работают.")
-        print("Убедись что устано�
+        print("Убедись что установлено: pip install 'python-telegram-bot[job-queue]'")
+
+    async def error_handler(update, context):
+        if isinstance(context.error, (TimedOut, NetworkError)):
+            print(f"[сеть] временный сбой: {context.error}")
+        else:
+            print(f"[ошибка] {context.error}")
+
+    app.add_error_handler(error_handler)
+
+    print("Бот запущен. Для остановки нажми Ctrl+C.")
+    # bootstrap_retries=-1 — бесконечные попытки подключиться при старте.
+    # Без этого бот падает если Telegram не ответил с первого раза.
+    app.run_polling(bootstrap_retries=-1)
