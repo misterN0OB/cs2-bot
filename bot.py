@@ -920,9 +920,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(link_buttons)
         )
 
-        # Ошибки площадок показываем отдельно если есть
-        if comparison["errors"]:
-            errs = "\n".join(comparison["errors"])
+        # Ошибки площадок показываем отдельно если есть.
+        # "unavailable" — тихая ошибка (например Skinport блокирует серверные IP),
+        # пользователю не показываем технические детали.
+        visible_errors = [e for e in comparison["errors"] if "unavailable" not in e]
+        if visible_errors:
+            errs = "\n".join(visible_errors)
             await query.message.reply_text(
                 f"Не удалось получить данные:\n{errs}",
                 parse_mode="HTML"

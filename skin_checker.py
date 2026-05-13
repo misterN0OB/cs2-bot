@@ -368,6 +368,11 @@ def get_skinport_price(skin_name: str, _debug: bool = False) -> dict:
                     return result
                 if _debug:
                     print(f"[Skinport] item data: {data[0]}")
+        elif r.status_code == 403:
+            # 403 — Skinport блокирует запросы с серверных IP (дата-центры).
+            # Это ограничение на стороне Skinport, обойти без прокси нельзя.
+            # Возвращаем тихую ошибку — пользователю не показываем технические детали.
+            return {"success": False, "error": "unavailable"}
         else:
             last_error = f"Skinport ответил кодом {r.status_code}"
     except Exception as e:
@@ -389,6 +394,8 @@ def get_skinport_price(skin_name: str, _debug: bool = False) -> dict:
                         if result:
                             return result
                 return {"success": False, "error": "Скин не найден в каталоге Skinport"}
+        elif r.status_code == 403:
+            return {"success": False, "error": "unavailable"}
     except Exception as e:
         last_error = f"Skinport каталог: {e}"
 
