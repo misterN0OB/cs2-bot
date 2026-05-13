@@ -1,0 +1,3 @@
+requests
+brotli
+python-telegram-bot[job-queue]==22.7

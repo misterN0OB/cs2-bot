@@ -1,0 +1,22 @@
+# Конфиг с токеном бота — никогда не заливать на GitHub!
+config.py
+
+# База данных SQLite — у каждого сервера своя
+bot_data.db
+
+# Служебные файлы Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Системные файлы Windows
+Thumbs.db
+desktop.ini
+
+# Файлы редакторов
+.vscode/
+.idea/
+
+# SSH ключи на всякий случай
+*.key
+*.pem
