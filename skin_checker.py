@@ -219,11 +219,38 @@ def get_skin_price(skin_name: str, currency: int = 5) -> dict:
             "error": "Steam не нашёл скин. Проверь точность названия.",
         }
 
+    lowest  = data.get("lowest_price")
+    median  = data.get("median_price")
+    volume  = data.get("volume", "0")
+
+    # Если priceoverview вернул пустые цены — пробуем запасной вариант:
+    # поиск Steam Market. Он почти всегда имеет sell_price_text даже для
+    # редких скинов с низким объёмом торгов.
+    if not lowest and not median:
+        try:
+            search_url = (
+                "https://steamcommunity.com/market/search/render/"
+                f"?appid=730&query={encoded_name}&count=1&norender=1"
+                f"&currency={currency}&country=RU"
+            )
+            sr = requests.get(search_url, timeout=10)
+            sdata = sr.json()
+            if sdata.get("success") and sdata.get("results"):
+                item = sdata["results"][0]
+                fallback_price = item.get("sell_price_text")
+                if fallback_price:
+                    lowest = fallback_price
+                    # Медианная цена недоступна через поиск — показываем прочерк
+                    median = "нет данных"
+                    volume = str(item.get("sell_listings", 0))
+        except Exception:
+            pass
+
     return {
         "success": True,
-        "lowest_price": data.get("lowest_price", "нет данных"),
-        "median_price": data.get("median_price", "нет данных"),
-        "volume": data.get("volume", "0"),  # сколько штук продано за сутки
+        "lowest_price": lowest or "нет данных",
+        "median_price": median or "нет данных",
+        "volume": volume,
     }
 
 
