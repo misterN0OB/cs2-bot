@@ -66,6 +66,7 @@ from database import (
     get_compare_count, increment_compare_count, is_premium, set_premium,
     FREE_COMPARES_PER_WEEK as DB_FREE_COMPARES,
     get_users_who_hit_limit_last_week,
+    upsert_watch_pct,
 )
 
 # Поддерживаемые валюты.
@@ -161,6 +162,8 @@ def build_watch_keyboard(user_id: int, skin_name: str, threshold: float, symbol:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"Упадёт ниже {fmt(threshold)} {symbol}", callback_data=f"sw_below:{user_id}")],
         [InlineKeyboardButton(f"Вырастет выше {fmt(threshold)} {symbol}", callback_data=f"sw_above:{user_id}")],
+        [InlineKeyboardButton("Упадёт на %", callback_data=f"sw_pct_drop:{user_id}"),
+         InlineKeyboardButton("Вырастет на %", callback_data=f"sw_pct_rise:{user_id}")],
     ])
 
 
@@ -178,6 +181,10 @@ def build_price_keyboard(skin_name: str) -> InlineKeyboardMarkup:
         # Для очень длинных имён используем временное хранилище
         cmp_data = f"cmp:__long__"
 
+    # Для кнопки "Похожие скины" берём только название оружия (до символа "|").
+    # Например: "AK-47 | Redline (FT)" → "AK-47"
+    weapon = skin_name.split("|")[0].strip()[:50]
+
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Обновить цену", callback_data=f"refresh:{skin_name[:55]}"),
@@ -185,6 +192,7 @@ def build_price_keyboard(skin_name: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("Сравнить площадки", callback_data=cmp_data),
+            InlineKeyboardButton("Похожие скины", callback_data=f"similar:{weapon}"),
         ]
     ])
 
@@ -292,6 +300,18 @@ async def check_prices(context: ContextTypes.DEFAULT_TYPE):
         elif w["price_above"] and current_price >= w["price_above"]:
             triggered = True
             condition_text = f"выросла выше {fmt(w['price_above'])} руб."
+
+        elif w.get("percent_drop") and w.get("base_price"):
+            target = w["base_price"] * (1 - w["percent_drop"] / 100)
+            if current_price <= target:
+                triggered = True
+                condition_text = f"упала на {w['percent_drop']:.0f}% (было {fmt(w['base_price'])} руб.)"
+
+        elif w.get("percent_rise") and w.get("base_price"):
+            target = w["base_price"] * (1 + w["percent_rise"] / 100)
+            if current_price >= target:
+                triggered = True
+                condition_text = f"выросла на {w['percent_rise']:.0f}% (было {fmt(w['base_price'])} руб.)"
 
         if triggered:
             message = (
@@ -456,8 +476,14 @@ async def list_watches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for w in watches:
         if w["price_below"]:
             condition = f"Уведомить когда упадёт ниже <b>{fmt(w['price_below'])} руб.</b>"
-        else:
+        elif w["price_above"]:
             condition = f"Уведомить когда вырастет выше <b>{fmt(w['price_above'])} руб.</b>"
+        elif w.get("percent_drop"):
+            condition = f"Уведомить когда цена упадёт на <b>{w['percent_drop']:.0f}%</b>"
+        elif w.get("percent_rise"):
+            condition = f"Уведомить когда цена вырастет на <b>{w['percent_rise']:.0f}%</b>"
+        else:
+            condition = "Условие не задано"
 
         caption = f"<b>{w['skin_name']}</b>\n\n{condition}"
         keyboard = InlineKeyboardMarkup([[
@@ -615,6 +641,42 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=DIALOG_KEYBOARD
         )
 
+    # --- Состояние: ждём процент для % отслеживания ---
+    elif state == "watch_waiting_pct":
+        try:
+            pct = float(text.replace(",", "."))
+            if pct <= 0 or pct >= 100:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "Введи число от 1 до 99. Например: <code>10</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        skin_name = context.user_data.pop("watch_skin", "")
+        base_price = context.user_data.pop("watch_base_price", 0)
+        direction = context.user_data.pop("watch_pct_direction", "drop")
+        context.user_data.pop("state", None)
+
+        user_id = update.effective_user.id
+
+        if direction == "drop":
+            action = upsert_watch_pct(user_id, skin_name, base_price, percent_drop=pct)
+            label = f"упадёт на {pct:.0f}%"
+        else:
+            action = upsert_watch_pct(user_id, skin_name, base_price, percent_rise=pct)
+            label = f"вырастет на {pct:.0f}%"
+
+        header = "Порог обновлён!" if action == "updated" else "Добавлено в отслеживание!"
+        await update.message.reply_text(
+            f"{header}\n\nСкин: <b>{skin_name}</b>\nУведомлю когда цена {label}\n"
+            f"<i>Текущая цена: {fmt(base_price)} (точка отсчёта)</i>",
+            parse_mode="HTML",
+            reply_markup=MAIN_KEYBOARD
+        )
+        record_activity(user_id)
+
     # --- Состояние: ждём цену для /watch ---
     elif state == "watch_waiting_price":
         skin_input = context.user_data.get("watch_skin", "")
@@ -663,6 +725,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     data = query.data
+
+    # --- Заглушка для неактивных кнопок ---
+    if data == "noop":
+        return
 
     # --- "Обновить цену" ---
     if data.startswith("refresh:"):
@@ -736,6 +802,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         record_activity(user_id)
         await query.edit_message_text(msg, parse_mode="HTML")
         await query.message.reply_text("Что дальше?", reply_markup=MAIN_KEYBOARD)
+
+    # --- Выбор % отслеживания ---
+    elif data.startswith("sw_pct_drop:") or data.startswith("sw_pct_rise:"):
+        user_id = query.from_user.id
+        pending = _pending_watches.get(user_id)
+        if not pending:
+            await query.answer("Время действия кнопки истекло. Попробуй заново.", show_alert=True)
+            return
+
+        direction = "drop" if data.startswith("sw_pct_drop:") else "rise"
+        # Сохраняем направление, переходим в режим ввода процента
+        context.user_data["watch_skin"] = pending["skin_name"]
+        context.user_data["watch_base_price"] = pending["threshold"]
+        context.user_data["watch_pct_direction"] = direction
+        context.user_data["state"] = "watch_waiting_pct"
+
+        label = "упадёт" if direction == "drop" else "вырастет"
+        await query.message.reply_text(
+            f"Скин: <b>{pending['skin_name']}</b>\n\n"
+            f"Введи на сколько процентов цена должна {label}?\n\n"
+            f"Например: <code>10</code> — уведомлю когда цена {label} на 10%",
+            parse_mode="HTML",
+            reply_markup=DIALOG_KEYBOARD
+        )
 
     # --- Смена валюты ---
     elif data.startswith("setcurrency:"):
@@ -965,6 +1055,59 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             provider_token="",            # для Telegram Stars токен не нужен
             currency="XTR",               # XTR = Telegram Stars
             prices=[LabeledPrice("Premium навсегда", PREMIUM_PRICE_STARS)],
+        )
+
+    # --- Похожие скины ---
+    elif data.startswith("similar:"):
+        weapon = data[len("similar:"):]
+        user_id = query.from_user.id
+        currency = get_user_currency(user_id)
+
+        await query.message.reply_text(
+            f"Ищу скины для: <b>{weapon}</b>...",
+            parse_mode="HTML"
+        )
+
+        # Запрашиваем топ-5 скинов того же оружия через поиск Steam
+        encoded = urllib.parse.quote(weapon)
+        import requests as _req
+        try:
+            url = (
+                f"https://steamcommunity.com/market/search/render/"
+                f"?appid=730&query={encoded}&count=6&norender=1"
+                f"&currency={currency}&country=RU"
+            )
+            resp = _req.get(url, timeout=10)
+            results = resp.json().get("results", [])
+        except Exception:
+            results = []
+
+        if not results:
+            await query.message.reply_text("Не удалось найти похожие скины. Попробуй позже.")
+            return
+
+        symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
+        lines = [f"<b>Скины для {weapon}:</b>\n"]
+        for i, item in enumerate(results[:5], 1):
+            name = item.get("name", "—")
+            price = item.get("sell_price_text", "нет цены")
+            listings = item.get("sell_listings", 0)
+            lines.append(f"{i}. {name}\n   Цена: <b>{price}</b>  |  Лотов: {listings}")
+
+        await query.message.reply_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "Проверить цену любого",
+                    callback_data=f"noop"
+                )
+            ]])
+        )
+        await query.message.reply_text(
+            "Введи название скина из списка в поле <b>Проверить цену</b>.",
+            parse_mode="HTML",
+            reply_markup=MAIN_KEYBOARD
         )
 
     # --- Удаление из списка ---

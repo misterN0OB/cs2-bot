@@ -82,6 +82,12 @@ def init_db():
             "ALTER TABLE watches ADD COLUMN last_notified_at TEXT",
             # is_premium: 0 = обычный пользователь, 1 = Premium (безлимитные сравнения)
             "ALTER TABLE user_settings ADD COLUMN is_premium INTEGER DEFAULT 0",
+            # percent_drop / percent_rise — отслеживание по % изменению цены.
+            # Например: percent_drop=10 → уведомить когда цена упадёт на 10% от текущей.
+            # base_price — цена скина в момент добавления отслеживания (для расчёта %).
+            "ALTER TABLE watches ADD COLUMN percent_drop REAL",
+            "ALTER TABLE watches ADD COLUMN percent_rise REAL",
+            "ALTER TABLE watches ADD COLUMN base_price REAL",
         ]:
             try:
                 conn.execute(sql)
@@ -153,6 +159,53 @@ def upsert_watch(user_id: int, skin_name: str, price_below: float = None, price_
         conn.execute(
             "INSERT INTO watches (user_id, skin_name, price_below, price_above) VALUES (?, ?, ?, ?)",
             (user_id, skin_name, price_below, price_above)
+        )
+        conn.commit()
+        return "created"
+
+
+def upsert_watch_pct(user_id: int, skin_name: str, base_price: float,
+                     percent_drop: float = None, percent_rise: float = None) -> str:
+    """
+    Добавляет или обновляет отслеживание по процентному изменению цены.
+
+    base_price    — текущая цена скина (зафиксируем как точку отсчёта)
+    percent_drop  — уведомить когда цена упадёт на X% от base_price
+    percent_rise  — уведомить когда цена вырастет на X% от base_price
+
+    Возвращает "updated" или "created".
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        if percent_drop is not None:
+            cursor = conn.execute(
+                "SELECT id FROM watches WHERE user_id=? AND skin_name=? AND percent_drop IS NOT NULL",
+                (user_id, skin_name)
+            )
+            row = cursor.fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE watches SET percent_drop=?, base_price=?, last_notified_at=NULL WHERE id=?",
+                    (percent_drop, base_price, row[0])
+                )
+                conn.commit()
+                return "updated"
+        elif percent_rise is not None:
+            cursor = conn.execute(
+                "SELECT id FROM watches WHERE user_id=? AND skin_name=? AND percent_rise IS NOT NULL",
+                (user_id, skin_name)
+            )
+            row = cursor.fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE watches SET percent_rise=?, base_price=?, last_notified_at=NULL WHERE id=?",
+                    (percent_rise, base_price, row[0])
+                )
+                conn.commit()
+                return "updated"
+
+        conn.execute(
+            "INSERT INTO watches (user_id, skin_name, base_price, percent_drop, percent_rise) VALUES (?,?,?,?,?)",
+            (user_id, skin_name, base_price, percent_drop, percent_rise)
         )
         conn.commit()
         return "created"
