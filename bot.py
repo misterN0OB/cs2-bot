@@ -797,12 +797,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"/economy/image/{icon_url}/128x128"
             )
 
-            # Запрашиваем цену отдельно — так валюта точно будет правильной
+            # Запрашиваем цену отдельно — так валюта точно будет правильной.
+            # Если priceoverview вернул "нет данных" — берём sell_price_text
+            # из оригинального поиска (он уже есть, дополнительный запрос не нужен).
             price_result = get_skin_price(name, currency=currency)
+            price_text = None
             if price_result["success"]:
-                price_text = price_result["lowest_price"]
-            else:
-                price_text = skin.get("sell_price_text", "—")
+                p = price_result["lowest_price"]
+                if p and p != "нет данных":
+                    price_text = p
+            if not price_text:
+                # Запасной вариант — цена из поиска Steam (та по которой сортировали)
+                price_text = skin.get("sell_price_text") or "—"
 
             if sort_by == "popular":
                 caption = f"<b>{i}. {name}</b>\nЦена: <b>{price_text}</b>  |  Лотов: <b>{listings:,}</b>"
