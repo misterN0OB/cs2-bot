@@ -313,6 +313,24 @@ def record_activity(user_id: int):
         conn.commit()
 
 
+def get_users_who_hit_limit_last_week() -> list:
+    """
+    Возвращает список user_id пользователей, которые исчерпали
+    бесплатный лимит сравнений на прошлой неделе.
+    Используется для отправки уведомления о восстановлении лимита в понедельник.
+    """
+    today = datetime.now().date()
+    monday_this_week = today - timedelta(days=today.weekday())
+    monday_last_week = (monday_this_week - timedelta(weeks=1)).isoformat()
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.execute(
+            "SELECT user_id FROM compare_usage WHERE week_start = ? AND count >= ?",
+            (monday_last_week, FREE_COMPARES_PER_WEEK)
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def get_stats() -> dict:
     """
     Собирает статистику использования бота.

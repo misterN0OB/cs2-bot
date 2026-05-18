@@ -65,6 +65,7 @@ from database import (
     record_activity, get_stats,
     get_compare_count, increment_compare_count, is_premium, set_premium,
     FREE_COMPARES_PER_WEEK as DB_FREE_COMPARES,
+    get_users_who_hit_limit_last_week,
 )
 
 # Поддерживаемые валюты.
@@ -976,6 +977,39 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =============================================================
+# ФОНОВАЯ ЗАДАЧА — уведомление о восстановлении лимита (каждый понедельник)
+# =============================================================
+async def notify_limit_reset(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Запускается каждый понедельник в 10:00 UTC (13:00 по Минску).
+    Находит пользователей, которые исчерпали лимит на прошлой неделе,
+    и сообщает им что бесплатные сравнения снова доступны.
+    """
+    users = get_users_who_hit_limit_last_week()
+    if not users:
+        return
+
+    print(f"[лимит сброшен] Уведомляю {len(users)} пользователей...")
+
+    for user_id in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"Еженедельный лимит восстановлен!\n\n"
+                    f"У тебя снова {DB_FREE_COMPARES} бесплатных сравнений цен "
+                    f"на Steam, DMarket и Skinport.\n\n"
+                    f"Нажми <b>Проверить цену</b> и сравни площадки."
+                ),
+                parse_mode="HTML",
+                reply_markup=MAIN_KEYBOARD
+            )
+        except Exception as e:
+            # Пользователь мог заблокировать бота — просто пропускаем
+            print(f"[лимит уведомление] не удалось отправить {user_id}: {e}")
+
+
+# =============================================================
 # ОБРАБОТЧИКИ ОПЛАТЫ TELEGRAM STARS
 # =============================================================
 
@@ -1065,6 +1099,17 @@ if __name__ == "__main__":
     if app.job_queue:
         app.job_queue.run_repeating(check_prices, interval=PRICE_CHECK_INTERVAL, first=60)
         print(f"Проверка цен запущена (каждые {PRICE_CHECK_INTERVAL // 60} мин).")
+
+        # Уведомление о восстановлении лимита — каждый понедельник в 10:00 UTC.
+        # days=(0,) — только понедельник (0 = понедельник в Python).
+        # time — время запуска в UTC (10:00 = 13:00 по Минску).
+        from datetime import time as dt_time
+        app.job_queue.run_daily(
+            notify_limit_reset,
+            time=dt_time(hour=10, minute=0),
+            days=(0,)
+        )
+        print("Уведомления о восстановлении лимита запущены (каждый понедельник в 10:00 UTC).")
     else:
         print("[внимание] JobQueue недоступен — фоновые уведомления не работают.")
         print("Убедись что установлено: pip install 'python-telegram-bot[job-queue]'")
