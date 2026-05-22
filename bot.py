@@ -1303,7 +1303,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Отправляем каждый скин отдельным фото — как в "Топ скины"
         for i, item in enumerate(results[:5], 1):
             name = item.get("name", "—")
-            price = item.get("sell_price_text", "нет цены")
+            # sell_price — цена в минимальных единицах валюты (копейки или центы).
+            # Делим на 100 и форматируем сами — sell_price_text ненадёжен (может вернуть $).
+            sell_price_raw = item.get("sell_price", 0)
+            if sell_price_raw:
+                price = f"{fmt(sell_price_raw / 100)} {symbol}"
+            else:
+                price = "нет цены"
             listings = item.get("sell_listings", 0)
 
             icon_url = item.get("asset_description", {}).get("icon_url")
