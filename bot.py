@@ -15,6 +15,8 @@
 import os
 import re
 import logging
+import urllib.parse
+import requests as _requests
 from datetime import datetime, timedelta
 
 from telegram import (
@@ -1070,14 +1072,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Запрашиваем топ-5 скинов того же оружия через поиск Steam
         encoded = urllib.parse.quote(weapon)
-        import requests as _req
         try:
             url = (
                 f"https://steamcommunity.com/market/search/render/"
                 f"?appid=730&query={encoded}&count=6&norender=1"
                 f"&currency={currency}&country=RU"
             )
-            resp = _req.get(url, timeout=10)
+            resp = _requests.get(url, timeout=10)
             results = resp.json().get("results", [])
         except Exception:
             results = []
