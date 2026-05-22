@@ -74,6 +74,16 @@ def init_db():
                 last_seen  TEXT DEFAULT (datetime('now'))
             )
         """)
+        # Таблица событий для ежедневной статистики.
+        # Каждое важное действие пользователя записывается сюда.
+        # event_type: price_check, watch_added, compare_done, limit_hit, new_user
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type  TEXT NOT NULL,
+                recorded_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
         # Таблица истории цен.
         # Бот записывает цену раз в час (во время check_prices) и когда пользователь
         # открывает "История цен". Это позволяет показать мин/макс/среднюю за 30 дней.
@@ -384,6 +394,15 @@ def set_premium(user_id: int, value: bool = True):
         conn.commit()
 
 
+def is_new_user(user_id: int) -> bool:
+    """Возвращает True если пользователь ещё не был в боте (нет записи в user_activity)."""
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM user_activity WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        return row is None
+
+
 def record_activity(user_id: int):
     """
     Фиксирует активность пользователя.
@@ -628,3 +647,79 @@ def remove_portfolio_item(item_id: int, user_id: int):
             (item_id, user_id)
         )
         conn.commit()
+
+
+# =============================================================
+# ЕЖЕДНЕВНАЯ СТАТИСТИКА
+# =============================================================
+
+def log_event(event_type: str):
+    """
+    Записывает событие для ежедневной статистики.
+    event_type может быть:
+      price_check  — пользователь проверил цену скина
+      watch_added  — добавлено новое отслеживание
+      compare_done — выполнено сравнение площадок
+      limit_hit    — пользователь упёрся в лимит сравнений
+      new_user     — новый пользователь запустил бота
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT INTO daily_events (event_type) VALUES (?)",
+            (event_type,)
+        )
+        conn.commit()
+
+
+def get_daily_stats(hours: int = 24) -> dict:
+    """
+    Возвращает статистику за последние N часов.
+    Используется для ежедневного отчёта администратору.
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        since = f"-{hours} hours"
+
+        def count_event(event_type):
+            return conn.execute(
+                "SELECT COUNT(*) FROM daily_events WHERE event_type = ? AND recorded_at >= datetime('now', ?)",
+                (event_type, since)
+            ).fetchone()[0]
+
+        price_checks  = count_event("price_check")
+        watches_added = count_event("watch_added")
+        compares_done = count_event("compare_done")
+        limit_hits    = count_event("limit_hit")
+        new_users     = count_event("new_user")
+
+        # Активные пользователи за сутки — из таблицы активности
+        active_today = conn.execute(
+            "SELECT COUNT(*) FROM user_activity WHERE last_seen >= datetime('now', ?)",
+            (since,)
+        ).fetchone()[0]
+
+        # Всего пользователей в базе
+        total_users = conn.execute(
+            "SELECT COUNT(*) FROM user_activity"
+        ).fetchone()[0]
+
+        # Всего активных отслеживаний
+        total_watches = conn.execute(
+            "SELECT COUNT(*) FROM watches"
+        ).fetchone()[0]
+
+        # Всего записей в портфелях
+        total_portfolio = conn.execute(
+            "SELECT COUNT(*) FROM portfolio"
+        ).fetchone()[0]
+
+    return {
+        "price_checks":  price_checks,
+        "watches_added": watches_added,
+        "compares_done": compares_done,
+        "limit_hits":    limit_hits,
+        "new_users":     new_users,
+        "active_today":  active_today,
+        "total_users":   total_users,
+        "total_watches": total_watches,
+        "total_portfolio": total_portfolio,
+    }

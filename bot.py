@@ -72,6 +72,7 @@ from database import (
     record_price_history, get_price_history_stats,
     add_referral, get_referral_stats, get_bonus_compares,
     add_portfolio_item, get_portfolio, remove_portfolio_item,
+    log_event, get_daily_stats, is_new_user,
 )
 
 # Поддерживаемые валюты.
@@ -256,6 +257,12 @@ async def show_price_for_skin(update: Update, skin_name: str, currency: int = 5)
     else:
         await update.message.reply_text(card_text, parse_mode="HTML", reply_markup=keyboard)
 
+    # Фиксируем событие для ежедневной статистики
+    try:
+        log_event("price_check")
+    except Exception:
+        pass
+
     return True
 
 
@@ -388,6 +395,14 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     user_id = update.effective_user.id
+
+    # Логируем нового пользователя ДО record_activity (пока запись ещё не создана)
+    try:
+        if is_new_user(user_id):
+            log_event("new_user")
+    except Exception:
+        pass
+
     record_activity(user_id)
 
     # Обработка реферальной ссылки.
@@ -1000,6 +1015,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             header = "Добавлено в отслеживание!"
             note = ""
+            try:
+                log_event("watch_added")
+            except Exception:
+                pass
 
         msg = f"{header}\n\nСкин: <b>{skin_name}</b>\nУведомлю когда цена {condition}"
         if note:
@@ -1153,6 +1172,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_limit = FREE_COMPARES_PER_WEEK + bonus
 
         if not user_premium and compare_count >= total_limit:
+            # Логируем что пользователь упёрся в лимит
+            try:
+                log_event("limit_hit")
+            except Exception:
+                pass
             # Лимит исчерпан — предлагаем варианты
             remaining_text = (
                 f"Ты использовал все {FREE_COMPARES_PER_WEEK} бесплатных сравнений на этой неделе.\n\n"
@@ -1199,6 +1223,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             increment_compare_count(user_id)
             new_count = compare_count + 1
             remaining = total_limit - new_count
+            try:
+                log_event("compare_done")
+            except Exception:
+                pass
         else:
             remaining = None  # Premium — безлимит
 
@@ -1521,6 +1549,90 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
 
 
 # =============================================================
+# SLASH-КОМАНДЫ ДЛЯ КНОПОК КЛАВИАТУРЫ
+# =============================================================
+
+async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /portfolio — открывает портфель скинов."""
+    record_activity(update.effective_user.id)
+    await show_portfolio(update, context)
+
+
+async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /settings — открывает настройки валюты."""
+    user_id = update.effective_user.id
+    curr = get_user_currency(user_id)
+    curr_name = CURRENCIES.get(curr, {}).get("name", "Рубли")
+    await update.message.reply_text(
+        f"Текущая валюта: <b>{curr_name}</b>\n\nВыбери валюту для отображения цен:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Рубли (руб.)", callback_data="setcurrency:5"),
+                InlineKeyboardButton("Доллары ($)", callback_data="setcurrency:1"),
+            ]
+        ])
+    )
+
+
+async def cmd_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /share — реферальная ссылка."""
+    user_id = update.effective_user.id
+    ref_stats = get_referral_stats(user_id)
+    ref_link = f"https://t.me/cs2skinprice_bot?start=ref_{user_id}"
+    share_text = "Отслеживай цены CS2 скинов на Steam прямо в Telegram!"
+    share_url = f"https://t.me/share/url?url={ref_link}&text={share_text}"
+    bonus = ref_stats["bonus_compares"]
+    total_limit = DB_FREE_COMPARES + bonus
+    await update.message.reply_text(
+        f"Твоя реферальная ссылка:\n<code>{ref_link}</code>\n\n"
+        f"За каждого приглашённого друга — <b>+3 бесплатных сравнения</b> в неделю навсегда.\n\n"
+        f"Приглашено: <b>{ref_stats['count']} чел.</b>\n"
+        f"Твой недельный лимит: <b>{total_limit} сравнений</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("Поделиться", url=share_url)
+        ]])
+    )
+
+
+# =============================================================
+# ЕЖЕДНЕВНЫЙ ОТЧЁТ АДМИНИСТРАТОРУ
+# =============================================================
+
+async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Запускается каждый день в 08:00 UTC (11:00 по Минску).
+    Отправляет статистику за последние 24 часа администратору.
+    """
+    s = get_daily_stats(hours=24)
+
+    text = (
+        f"<b>Ежедневный отчёт CS2 Skin Tracker</b>\n\n"
+        f"<b>За последние 24 часа:</b>\n"
+        f"  Новых пользователей: <b>{s['new_users']}</b>\n"
+        f"  Активных пользователей: <b>{s['active_today']}</b>\n"
+        f"  Проверок цен: <b>{s['price_checks']}</b>\n"
+        f"  Добавлено отслеживаний: <b>{s['watches_added']}</b>\n"
+        f"  Сравнений площадок: <b>{s['compares_done']}</b>\n"
+        f"  Упёрлись в лимит: <b>{s['limit_hits']}</b>\n\n"
+        f"<b>Всего в базе:</b>\n"
+        f"  Пользователей: <b>{s['total_users']}</b>\n"
+        f"  Активных отслеживаний: <b>{s['total_watches']}</b>\n"
+        f"  Скинов в портфелях: <b>{s['total_portfolio']}</b>"
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=text,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"[ежедневный отчёт] ошибка: {e}")
+
+
+# =============================================================
 # ЗАПУСК БОТА
 # =============================================================
 if __name__ == "__main__":
@@ -1542,6 +1654,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("watch", watch))
     app.add_handler(CommandHandler("list", list_watches))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("portfolio", cmd_portfolio))
+    app.add_handler(CommandHandler("settings", cmd_settings))
+    app.add_handler(CommandHandler("share", cmd_share))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_callback))
 
@@ -1568,6 +1683,13 @@ if __name__ == "__main__":
             days=(0,)
         )
         print("Уведомления о восстановлении лимита запущены (каждый понедельник в 10:00 UTC).")
+
+        # Ежедневный отчёт администратору — каждый день в 08:00 UTC (11:00 по Минску).
+        app.job_queue.run_daily(
+            send_daily_report,
+            time=dt_time(hour=8, minute=0),
+        )
+        print("Ежедневный отчёт запущен (каждый день в 08:00 UTC / 11:00 Минск).")
     else:
         print("[внимание] JobQueue недоступен — фоновые уведомления не работают.")
         print("Убедись что установлено: pip install 'python-telegram-bot[job-queue]'")
