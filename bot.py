@@ -307,25 +307,27 @@ async def check_prices(context: ContextTypes.DEFAULT_TYPE):
         triggered = False
         condition_text = ""
 
+        symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
+
         if w["price_below"] and current_price <= w["price_below"]:
             triggered = True
-            condition_text = f"упала ниже {fmt(w['price_below'])} руб."
+            condition_text = f"упала ниже {fmt(w['price_below'])} {symbol}"
 
         elif w["price_above"] and current_price >= w["price_above"]:
             triggered = True
-            condition_text = f"выросла выше {fmt(w['price_above'])} руб."
+            condition_text = f"выросла выше {fmt(w['price_above'])} {symbol}"
 
         elif w.get("percent_drop") and w.get("base_price"):
             target = w["base_price"] * (1 - w["percent_drop"] / 100)
             if current_price <= target:
                 triggered = True
-                condition_text = f"упала на {w['percent_drop']:.0f}% (было {fmt(w['base_price'])} руб.)"
+                condition_text = f"упала на {w['percent_drop']:.0f}% (было {fmt(w['base_price'])} {symbol})"
 
         elif w.get("percent_rise") and w.get("base_price"):
             target = w["base_price"] * (1 + w["percent_rise"] / 100)
             if current_price >= target:
                 triggered = True
-                condition_text = f"выросла на {w['percent_rise']:.0f}% (было {fmt(w['base_price'])} руб.)"
+                condition_text = f"выросла на {w['percent_rise']:.0f}% (было {fmt(w['base_price'])} {symbol})"
 
         if triggered:
             message = (
