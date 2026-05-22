@@ -69,6 +69,9 @@ from database import (
     FREE_COMPARES_PER_WEEK as DB_FREE_COMPARES,
     get_users_who_hit_limit_last_week,
     upsert_watch_pct,
+    record_price_history, get_price_history_stats,
+    add_referral, get_referral_stats, get_bonus_compares,
+    add_portfolio_item, get_portfolio, remove_portfolio_item,
 )
 
 # Поддерживаемые валюты.
@@ -109,8 +112,8 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["Проверить цену", "Мои отслеживания"],
         ["Добавить отслеживание", "Топ скины"],
-        ["Настройки", "Написать нам"],
-        ["Поделиться с другом"],
+        ["Портфель", "Настройки"],
+        ["Написать нам", "Поделиться с другом"],
     ],
     resize_keyboard=True
 )
@@ -195,7 +198,10 @@ def build_price_keyboard(skin_name: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("Сравнить площадки", callback_data=cmp_data),
             InlineKeyboardButton("Похожие скины", callback_data=f"similar:{weapon}"),
-        ]
+        ],
+        [
+            InlineKeyboardButton("История цен", callback_data=f"history:{skin_name[:55]}"),
+        ],
     ])
 
 
@@ -291,6 +297,12 @@ async def check_prices(context: ContextTypes.DEFAULT_TYPE):
         if current_price is None:
             continue
 
+        # Записываем цену в историю — накапливаем данные для кнопки "История цен"
+        try:
+            record_price_history(w["skin_name"], current_price)
+        except Exception:
+            pass
+
         # Проверяем условие уведомления
         triggered = False
         condition_text = ""
@@ -373,10 +385,32 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    record_activity(update.effective_user.id)
+    user_id = update.effective_user.id
+    record_activity(user_id)
 
-    # Сначала отправляем короткое сообщение о подключении к Steam.
-    # Пользователь сразу видит что бот работает, пока грузится картинка.
+    # Обработка реферальной ссылки.
+    # Когда пользователь перешёл по ссылке вида t.me/cs2skinprice_bot?start=ref_12345
+    # Telegram передаёт "ref_12345" как аргумент команды /start.
+    if context.args and context.args[0].startswith("ref_"):
+        try:
+            referrer_id = int(context.args[0][4:])
+            if add_referral(referrer_id, user_id):
+                # Уведомляем того кто пригласил — ему начислены бонусы
+                try:
+                    await context.bot.send_message(
+                        chat_id=referrer_id,
+                        text=(
+                            "По твоей реферальной ссылке пришёл новый пользователь!\n\n"
+                            "Тебе начислено <b>+3 бесплатных сравнения</b> в неделю."
+                        ),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass  # Реферер мог заблокировать бота — пропускаем
+        except (ValueError, Exception):
+            pass  # Некорректный формат ссылки — просто игнорируем
+
+    # Сначала отправляем короткое сообщение — пользователь видит что бот работает.
     await update.message.reply_text(
         "Подключаюсь к торговой площадке Steam...\n"
         "Может потребоваться несколько секунд."
@@ -579,20 +613,87 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- Кнопка "Поделиться с другом" ---
     elif text == "Поделиться с другом":
-        # Формируем ссылку для Telegram share — открывает диалог пересылки.
-        # Пользователь выбирает другу и отправляет приглашение одним нажатием.
+        user_id = update.effective_user.id
+        ref_stats = get_referral_stats(user_id)
+        # Уникальная реферальная ссылка — Telegram передаёт параметр в /start
+        ref_link = f"https://t.me/cs2skinprice_bot?start=ref_{user_id}"
         share_text = "Отслеживай цены CS2 скинов на Steam прямо в Telegram!"
-        share_url = f"https://t.me/share/url?url=https://t.me/cs2skinprice_bot&text={share_text}"
+        share_url = f"https://t.me/share/url?url={ref_link}&text={share_text}"
+
+        bonus = ref_stats["bonus_compares"]
+        total_limit = DB_FREE_COMPARES + bonus
+
         await update.message.reply_text(
-            "Отправь ссылку на бота другу:",
+            f"Твоя реферальная ссылка:\n<code>{ref_link}</code>\n\n"
+            f"За каждого приглашённого друга — <b>+3 бесплатных сравнения</b> в неделю навсегда.\n\n"
+            f"Приглашено: <b>{ref_stats['count']} чел.</b>\n"
+            f"Твой недельный лимит: <b>{total_limit} сравнений</b>",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("Поделиться", url=share_url)
             ]])
         )
 
+    # --- Кнопка "Портфель" ---
+    elif text == "Портфель":
+        record_activity(update.effective_user.id)
+        await show_portfolio(update, context)
+
     # --- Кнопка "Помощь" ---
     elif text == "Помощь":
         await start(update, context)
+
+    # --- Состояние: ждём название скина для портфеля ---
+    elif state == "portfolio_waiting_name":
+        context.user_data["portfolio_skin"] = text
+        context.user_data["state"] = "portfolio_waiting_price"
+        currency = get_user_currency(update.effective_user.id)
+        symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
+        await update.message.reply_text(
+            f"Скин: <b>{text}</b>\n\nВведи цену по которой ты его купил (в {symbol}):\n\n"
+            f"Например: <code>5000</code>",
+            parse_mode="HTML",
+            reply_markup=DIALOG_KEYBOARD
+        )
+
+    # --- Состояние: ждём цену покупки для портфеля ---
+    elif state == "portfolio_waiting_price":
+        skin_name = context.user_data.pop("portfolio_skin", "")
+        context.user_data.pop("state", None)
+        try:
+            purchase_price = float(text.replace(",", "."))
+            if purchase_price <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                f"<b>{text}</b> не похоже на цену. Введи число, например: <code>5000</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        user_id = update.effective_user.id
+
+        # Если название на русском — пробуем найти правильное
+        if has_cyrillic(skin_name):
+            await update.message.reply_text(f"Ищу скин: <b>{skin_name}</b>...", parse_mode="HTML")
+            resolved = resolve_skin_name(skin_name)
+            if resolved:
+                skin_name = resolved
+            else:
+                await update.message.reply_text("Не удалось найти скин. Попробуй на английском.", reply_markup=MAIN_KEYBOARD)
+                return
+
+        add_portfolio_item(user_id, skin_name, purchase_price)
+        currency = get_user_currency(user_id)
+        symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
+        await update.message.reply_text(
+            f"Добавлено в портфель!\n\n"
+            f"Скин: <b>{skin_name}</b>\n"
+            f"Цена покупки: <b>{fmt(purchase_price)} {symbol}</b>\n\n"
+            f"Когда цена изменится — бот покажет прибыль или убыток.",
+            parse_mode="HTML",
+            reply_markup=MAIN_KEYBOARD
+        )
 
     # --- Состояние: ждём сообщение от пользователя ---
     elif state == "waiting_feedback":
@@ -714,6 +815,105 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=build_watch_keyboard(user_id, skin_name, threshold, symbol)
         )
+
+
+# =============================================================
+# ПОРТФЕЛЬ — вспомогательная функция отображения
+# =============================================================
+async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Показывает портфель скинов пользователя.
+    Для каждого скина запрашивает текущую цену и считает прибыль/убыток.
+    """
+    user_id = update.effective_user.id
+    items = get_portfolio(user_id)
+    currency = get_user_currency(user_id)
+    symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
+
+    add_keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Добавить скин", callback_data="portfolio_add")
+    ]])
+
+    if not items:
+        await update.message.reply_text(
+            "<b>Твой портфель пуст.</b>\n\n"
+            "Добавь скины которые у тебя есть — бот будет показывать\n"
+            "текущую стоимость и прибыль/убыток.",
+            parse_mode="HTML",
+            reply_markup=add_keyboard
+        )
+        return
+
+    await update.message.reply_text(
+        f"<b>Твой портфель: {len(items)} скин(ов)</b>\n\nЗагружаю текущие цены...",
+        parse_mode="HTML"
+    )
+
+    total_bought = 0.0
+    total_now = 0.0
+
+    for item in items:
+        name = item["skin_name"]
+        bought = item["purchase_price"]
+        total_bought += bought
+
+        # Получаем текущую цену
+        result = get_skin_price(name, currency=currency)
+        current_price = None
+        price_str = "нет данных"
+        if result["success"]:
+            current_price = parse_price_value(result["lowest_price"])
+            if current_price:
+                price_str = result["lowest_price"]
+                total_now += current_price
+
+        # Считаем прибыль/убыток
+        if current_price:
+            diff = current_price - bought
+            pct = (diff / bought) * 100
+            if diff > 0:
+                pnl_text = f"+{fmt(diff)} {symbol} (+{pct:.1f}%)"
+            elif diff < 0:
+                pnl_text = f"{fmt(diff)} {symbol} ({pct:.1f}%)"
+            else:
+                pnl_text = "без изменений"
+        else:
+            pnl_text = "нет данных"
+
+        caption = (
+            f"<b>{name}</b>\n\n"
+            f"Куплено за: <b>{fmt(bought)} {symbol}</b>\n"
+            f"Сейчас: <b>{price_str}</b>\n"
+            f"Прибыль/убыток: <b>{pnl_text}</b>"
+        )
+
+        del_keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Удалить из портфеля", callback_data=f"portdel:{item['id']}")
+        ]])
+
+        image_url = get_skin_image_url(name)
+        if image_url:
+            await update.message.reply_photo(
+                photo=image_url, caption=caption,
+                parse_mode="HTML", reply_markup=del_keyboard
+            )
+        else:
+            await update.message.reply_text(caption, parse_mode="HTML", reply_markup=del_keyboard)
+
+    # Итоговая строка по всему портфелю
+    if total_bought > 0 and total_now > 0:
+        total_diff = total_now - total_bought
+        total_pct = (total_diff / total_bought) * 100
+        sign = "+" if total_diff >= 0 else ""
+        summary = (
+            f"<b>Итого по портфелю:</b>\n"
+            f"Вложено: <b>{fmt(total_bought)} {symbol}</b>\n"
+            f"Сейчас: <b>{fmt(total_now)} {symbol}</b>\n"
+            f"Итог: <b>{sign}{fmt(total_diff)} {symbol} ({sign}{total_pct:.1f}%)</b>"
+        )
+        await update.message.reply_text(summary, parse_mode="HTML", reply_markup=add_keyboard)
+    else:
+        await update.message.reply_text("Добавить ещё скин:", reply_markup=add_keyboard)
 
 
 # =============================================================
@@ -941,11 +1141,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             skin_name = data[4:]
 
-        # Проверяем лимит — Premium и администратор не ограничены
+        # Проверяем лимит — Premium и администратор не ограничены.
+        # Обычный лимит = FREE_COMPARES_PER_WEEK + бонусы за рефералов.
         user_premium = is_premium(user_id) or (user_id == ADMIN_CHAT_ID)
         compare_count = get_compare_count(user_id)
+        bonus = get_bonus_compares(user_id)
+        total_limit = FREE_COMPARES_PER_WEEK + bonus
 
-        if not user_premium and compare_count >= FREE_COMPARES_PER_WEEK:
+        if not user_premium and compare_count >= total_limit:
             # Лимит исчерпан — предлагаем варианты
             remaining_text = (
                 f"Ты использовал все {FREE_COMPARES_PER_WEEK} бесплатных сравнений на этой неделе.\n\n"
@@ -991,7 +1194,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not user_premium:
             increment_compare_count(user_id)
             new_count = compare_count + 1
-            remaining = FREE_COMPARES_PER_WEEK - new_count
+            remaining = total_limit - new_count
         else:
             remaining = None  # Premium — безлимит
 
@@ -1108,7 +1311,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Используем короткое имя чтобы влезть в 64 байта callback_data
             cb_name = name[:53]
             skin_keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("Проверить цену", callback_data=f"refresh:{cb_name}")
+                InlineKeyboardButton("Подробнее", callback_data=f"refresh:{cb_name}")
             ]])
 
             if icon_url:
@@ -1145,6 +1348,71 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=MAIN_KEYBOARD
         )
+
+    # --- История цен ---
+    elif data.startswith("history:"):
+        skin_name = data[len("history:"):]
+        user_id = query.from_user.id
+        currency = get_user_currency(user_id)
+        symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
+
+        # Записываем текущую цену в историю прямо сейчас
+        result = get_skin_price(skin_name, currency=currency)
+        if result["success"]:
+            current_price = parse_price_value(result["lowest_price"])
+            if current_price:
+                try:
+                    record_price_history(skin_name, current_price)
+                except Exception:
+                    pass
+
+        stats = get_price_history_stats(skin_name, days=30)
+
+        if stats["count"] < 3:
+            await query.message.reply_text(
+                f"<b>История цен: {skin_name}</b>\n\n"
+                f"Данных пока недостаточно — бот только начал собирать историю.\n\n"
+                f"Добавь скин в <b>Отслеживание</b> — каждый час бот будет фиксировать цену. "
+                f"Через несколько дней здесь появится полная статистика.",
+                parse_mode="HTML"
+            )
+            return
+
+        await query.message.reply_text(
+            f"<b>История цен за 30 дней</b>\n"
+            f"<b>{skin_name}</b>\n\n"
+            f"Минимальная: <b>{fmt(stats['min'])} {symbol}</b>\n"
+            f"Максимальная: <b>{fmt(stats['max'])} {symbol}</b>\n"
+            f"Средняя: <b>{fmt(stats['avg'])} {symbol}</b>\n\n"
+            f"Точек данных: {stats['count']}",
+            parse_mode="HTML"
+        )
+
+    # --- Добавить скин в портфель (кнопка под списком портфеля) ---
+    elif data == "portfolio_add":
+        context.user_data["state"] = "portfolio_waiting_name"
+        await query.message.reply_text(
+            "Введи название скина который хочешь добавить в портфель:\n\n"
+            "<b>Примеры:</b>\n"
+            "<code>AK-47 | Redline (Field-Tested)</code>\n"
+            "<code>красная линия</code>",
+            parse_mode="HTML",
+            reply_markup=DIALOG_KEYBOARD
+        )
+
+    # --- Удаление из портфеля ---
+    elif data.startswith("portdel:"):
+        item_id = int(data[len("portdel:"):])
+        user_id = query.from_user.id
+        remove_portfolio_item(item_id, user_id)
+        try:
+            await query.edit_message_caption(caption="Удалено из портфеля.", reply_markup=None)
+        except Exception:
+            try:
+                await query.edit_message_text("Удалено из портфеля.")
+            except Exception:
+                pass
+        await query.answer("Удалено.", show_alert=False)
 
     # --- Удаление из списка ---
     elif data.startswith("delwatch:"):

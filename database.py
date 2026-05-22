@@ -74,6 +74,40 @@ def init_db():
                 last_seen  TEXT DEFAULT (datetime('now'))
             )
         """)
+        # Таблица истории цен.
+        # Бот записывает цену раз в час (во время check_prices) и когда пользователь
+        # открывает "История цен". Это позволяет показать мин/макс/среднюю за 30 дней.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS price_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                skin_name   TEXT NOT NULL,
+                price       REAL NOT NULL,
+                recorded_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        # Таблица рефералов.
+        # referrer_id — кто пригласил, referred_id — кто пришёл по ссылке.
+        # referred_id UNIQUE — один пользователь не может быть приглашён дважды.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER NOT NULL,
+                referred_id INTEGER UNIQUE NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        # Таблица портфеля скинов.
+        # Пользователь вносит скины с ценой покупки.
+        # Бот показывает текущую цену и прибыль/убыток.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id        INTEGER NOT NULL,
+                skin_name      TEXT NOT NULL,
+                purchase_price REAL NOT NULL,
+                added_at       TEXT DEFAULT (datetime('now'))
+            )
+        """)
         conn.commit()
 
     # Миграция — безопасно добавляем колонки если их нет
@@ -88,6 +122,9 @@ def init_db():
             "ALTER TABLE watches ADD COLUMN percent_drop REAL",
             "ALTER TABLE watches ADD COLUMN percent_rise REAL",
             "ALTER TABLE watches ADD COLUMN base_price REAL",
+            # bonus_compares — бонусные сравнения за приглашённых друзей.
+            # Каждый приглашённый друг даёт +3 к еженедельному лимиту навсегда.
+            "ALTER TABLE user_settings ADD COLUMN bonus_compares INTEGER DEFAULT 0",
         ]:
             try:
                 conn.execute(sql)
@@ -433,3 +470,161 @@ def get_stats() -> dict:
         "active_watches": active_watches,
         "top_skins": top_skins,
     }
+
+
+# =============================================================
+# ИСТОРИЯ ЦЕН
+# =============================================================
+
+def record_price_history(skin_name: str, price: float):
+    """
+    Записывает текущую цену скина в историю.
+    Вызывается раз в час из check_prices и когда пользователь
+    открывает кнопку "История цен".
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT INTO price_history (skin_name, price) VALUES (?, ?)",
+            (skin_name, price)
+        )
+        conn.commit()
+
+
+def get_price_history_stats(skin_name: str, days: int = 30) -> dict:
+    """
+    Возвращает статистику цен за последние N дней:
+      min   — минимальная цена
+      max   — максимальная цена
+      avg   — средняя цена
+      count — сколько записей в базе (показываем пользователю)
+
+    Если данных нет — возвращает count=0.
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.execute("""
+            SELECT MIN(price), MAX(price), AVG(price), COUNT(*)
+            FROM price_history
+            WHERE skin_name = ? AND recorded_at >= datetime('now', ?)
+        """, (skin_name, f"-{days} days"))
+        row = cursor.fetchone()
+        if not row or not row[3]:
+            return {"min": None, "max": None, "avg": None, "count": 0}
+        return {
+            "min": row[0],
+            "max": row[1],
+            "avg": row[2],
+            "count": row[3],
+        }
+
+
+# =============================================================
+# РЕФЕРАЛЬНАЯ ПРОГРАММА
+# =============================================================
+
+def add_referral(referrer_id: int, referred_id: int) -> bool:
+    """
+    Записывает нового реферала.
+    Начисляет рефереру +3 бонусных сравнения за неделю.
+
+    Возвращает True если реферал новый, False если уже был
+    (один пользователь не может быть приглашён дважды — UNIQUE).
+    Также возвращает False если пользователь пытается пригласить сам себя.
+    """
+    if referrer_id == referred_id:
+        return False
+    with sqlite3.connect(DB_FILE) as conn:
+        try:
+            conn.execute(
+                "INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)",
+                (referrer_id, referred_id)
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # referred_id уже есть — пользователь уже был приглашён
+            return False
+
+        # Начисляем +3 бонусных сравнения рефереру
+        conn.execute("""
+            INSERT INTO user_settings (user_id, currency, bonus_compares)
+            VALUES (?, 5, 3)
+            ON CONFLICT(user_id) DO UPDATE SET bonus_compares = bonus_compares + 3
+        """, (referrer_id,))
+        conn.commit()
+        return True
+
+
+def get_referral_stats(user_id: int) -> dict:
+    """
+    Возвращает статистику рефералов пользователя:
+      count         — сколько человек пришло по его ссылке
+      bonus_compares — сколько бонусных сравнений накоплено
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM referrals WHERE referrer_id = ?",
+            (user_id,)
+        ).fetchone()[0]
+        bonus_row = conn.execute(
+            "SELECT bonus_compares FROM user_settings WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+        bonus = bonus_row[0] if bonus_row else 0
+    return {"count": count, "bonus_compares": bonus}
+
+
+def get_bonus_compares(user_id: int) -> int:
+    """
+    Возвращает количество бонусных сравнений пользователя.
+    Используется при проверке лимита сравнений площадок.
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute(
+            "SELECT bonus_compares FROM user_settings WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+        return row[0] if row else 0
+
+
+# =============================================================
+# ПОРТФЕЛЬ СКИНОВ
+# =============================================================
+
+def add_portfolio_item(user_id: int, skin_name: str, purchase_price: float) -> int:
+    """
+    Добавляет скин в портфель пользователя.
+    Возвращает id новой записи.
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.execute(
+            "INSERT INTO portfolio (user_id, skin_name, purchase_price) VALUES (?, ?, ?)",
+            (user_id, skin_name, purchase_price)
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_portfolio(user_id: int) -> list:
+    """
+    Возвращает список скинов в портфеле пользователя.
+    Каждая запись — словарь с полями: id, skin_name, purchase_price, added_at.
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT * FROM portfolio WHERE user_id = ? ORDER BY added_at DESC",
+            (user_id,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def remove_portfolio_item(item_id: int, user_id: int):
+    """
+    Удаляет скин из портфеля.
+    user_id передаём для безопасности — нельзя удалить чужую запись.
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "DELETE FROM portfolio WHERE id = ? AND user_id = ?",
+            (item_id, user_id)
+        )
+        conn.commit()
