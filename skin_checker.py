@@ -45,8 +45,10 @@ def parse_price_value(price_str: str) -> float | None:
     if not price_str:
         return None
 
-    # Убираем всё кроме цифр, точки и запятой
-    cleaned = re.sub(r'[^\d,.]', '', price_str)
+    # Убираем всё кроме цифр, точки и запятой.
+    # .strip('.,') в конце убирает точку от "руб." — иначе "2993,73."
+    # воспринималась бы как "есть и запятая, и точка" и давала неверный результат.
+    cleaned = re.sub(r'[^\d,.]', '', price_str).strip('.,')
     if not cleaned:
         return None
 
