@@ -1088,25 +1088,60 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         symbol = CURRENCIES.get(currency, {}).get("symbol", "руб.")
-        lines = [f"<b>Скины для {weapon}:</b>\n"]
+
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"<b>Похожие скины для {weapon}:</b>",
+            parse_mode="HTML"
+        )
+
+        # Отправляем каждый скин отдельным фото — как в "Топ скины"
         for i, item in enumerate(results[:5], 1):
             name = item.get("name", "—")
             price = item.get("sell_price_text", "нет цены")
             listings = item.get("sell_listings", 0)
-            lines.append(f"{i}. {name}\n   Цена: <b>{price}</b>  |  Лотов: {listings}")
+
+            icon_url = item.get("asset_description", {}).get("icon_url")
+            caption = f"<b>{i}. {name}</b>\nЦена: <b>{price}</b>  |  Лотов: {listings}"
+
+            # Кнопка "Проверить цену" для каждого скина
+            # Используем короткое имя чтобы влезть в 64 байта callback_data
+            cb_name = name[:53]
+            skin_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("Проверить цену", callback_data=f"refresh:{cb_name}")
+            ]])
+
+            if icon_url:
+                img_url = (
+                    f"https://community.cloudflare.steamstatic.com"
+                    f"/economy/image/{icon_url}/128x128"
+                )
+                try:
+                    await context.bot.send_photo(
+                        chat_id=query.message.chat_id,
+                        photo=img_url,
+                        caption=caption,
+                        parse_mode="HTML",
+                        reply_markup=skin_keyboard
+                    )
+                except Exception:
+                    # Если фото не загрузилось — отправляем текстом
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=caption,
+                        parse_mode="HTML",
+                        reply_markup=skin_keyboard
+                    )
+            else:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=caption,
+                    parse_mode="HTML",
+                    reply_markup=skin_keyboard
+                )
 
         await query.message.reply_text(
-            "\n".join(lines),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(
-                    "Проверить цену любого",
-                    callback_data=f"noop"
-                )
-            ]])
-        )
-        await query.message.reply_text(
-            "Введи название скина из списка в поле <b>Проверить цену</b>.",
+            "Нажми <b>Проверить цену</b> под любым скином.",
             parse_mode="HTML",
             reply_markup=MAIN_KEYBOARD
         )
