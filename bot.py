@@ -935,8 +935,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- "Обновить цену" ---
     if data.startswith("refresh:"):
         skin_name = data[len("refresh:"):]
+        user_id = query.from_user.id
+        currency = get_user_currency(user_id)
         await query.edit_message_caption(caption=f"Обновляю цену для: <b>{skin_name}</b>...", parse_mode="HTML")
-        result = get_skin_price(skin_name)
+        result = get_skin_price(skin_name, currency=currency)
         if not result["success"]:
             await query.edit_message_caption(caption=f"Не удалось обновить цену.\n{result['error']}", parse_mode="HTML")
             return
