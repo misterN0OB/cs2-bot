@@ -1302,20 +1302,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-        # Отправляем каждый скин отдельным фото — как в "Топ скины"
+        # Отправляем каждый скин отдельным фото — как в "Топ скины".
+        # Цену не показываем здесь: сервер на датацентре, Steam возвращает цены в USD
+        # независимо от currency параметра. Актуальная цена — по кнопке "Подробнее".
         for i, item in enumerate(results[:5], 1):
             name = item.get("name", "—")
-            # sell_price — цена в минимальных единицах валюты (копейки или центы).
-            # Делим на 100 и форматируем сами — sell_price_text ненадёжен (может вернуть $).
-            sell_price_raw = item.get("sell_price", 0)
-            if sell_price_raw:
-                price = f"{fmt(sell_price_raw / 100)} {symbol}"
-            else:
-                price = "нет цены"
             listings = item.get("sell_listings", 0)
 
             icon_url = item.get("asset_description", {}).get("icon_url")
-            caption = f"<b>{i}. {name}</b>\nЦена: <b>{price}</b>  |  Лотов: {listings}"
+            caption = f"<b>{i}. {name}</b>\nЛотов на продаже: {listings}"
 
             # Кнопка "Проверить цену" для каждого скина
             # Используем короткое имя чтобы влезть в 64 байта callback_data
