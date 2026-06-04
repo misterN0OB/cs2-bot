@@ -338,6 +338,110 @@ def route_top():
     return jsonify({"items": items})
 
 
+@app.route("/api/home")
+def route_home():
+    """Данные для главной страницы: trending, expensive, popular."""
+    currency = request.args.get("currency", "RUB").upper()
+
+    # Топ дорогих (первые 8)
+    expensive = []
+    for name in TOP_EXPENSIVE[:8]:
+        p = get_price_steam(name, currency)
+        if p:
+            expensive.append({
+                "name": name,
+                "lowest_price": p["lowest_price"],
+                "median_price": p["median_price"],
+                "volume": p["volume"],
+                "image": "",
+                "change": None,
+            })
+
+    # Топ популярных (первые 8)
+    popular = []
+    for name in TOP_POPULAR[:8]:
+        p = get_price_steam(name, currency)
+        if p:
+            popular.append({
+                "name": name,
+                "lowest_price": p["lowest_price"],
+                "median_price": p["median_price"],
+                "volume": p["volume"],
+                "image": "",
+                "change": None,
+            })
+
+    # Топ роста за 24 часа — из price_history
+    trending = []
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            # Берём скины у которых есть минимум 2 записи за последние 25 часов
+            rows = conn.execute("""
+                SELECT item_name,
+                       MIN(price) as price_old,
+                       MAX(price) as price_new
+                FROM price_history
+                WHERE recorded_at > datetime('now', '-25 hours')
+                GROUP BY item_name
+                HAVING COUNT(*) >= 2 AND price_old > 0
+                ORDER BY (MAX(price) - MIN(price)) / MIN(price) DESC
+                LIMIT 8
+            """).fetchall()
+            for row in rows:
+                name, old_p, new_p = row
+                change = round(((new_p - old_p) / old_p) * 100, 1)
+                if abs(change) < 0.5:
+                    continue  # игнорируем незначительные
+                p = get_price_steam(name, currency)
+                trending.append({
+                    "name": name,
+                    "lowest_price": p["lowest_price"] if p else new_p,
+                    "median_price": p["median_price"] if p else new_p,
+                    "volume": p["volume"] if p else "—",
+                    "image": "",
+                    "change": change,
+                })
+    except Exception as e:
+        print(f"Trending error: {e}")
+
+    return jsonify({
+        "trending": trending,
+        "expensive": expensive,
+        "popular": popular,
+    })
+
+
+@app.route("/api/user/status")
+def route_user_status():
+    """Статус пользователя: premium, referrals, bonus_views."""
+    user_id = request.args.get("user_id", 0, type=int)
+    if not user_id:
+        return jsonify({"premium": False, "referrals": 0, "bonus_views": 0})
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            # Проверяем premium
+            row = conn.execute(
+                "SELECT premium, bonus_compares FROM user_settings WHERE user_id=?",
+                (user_id,)
+            ).fetchone()
+            premium = bool(row[0]) if row else False
+            bonus = row[1] if row else 0
+
+            # Количество приглашённых
+            ref_count = conn.execute(
+                "SELECT COUNT(*) FROM referrals WHERE referrer_id=?",
+                (user_id,)
+            ).fetchone()[0]
+
+        return jsonify({
+            "premium": premium,
+            "referrals": ref_count,
+            "bonus_views": bonus * 5,  # каждый реферал = 5 просмотров
+        })
+    except Exception as e:
+        return jsonify({"premium": False, "referrals": 0, "bonus_views": 0})
+
+
 @app.route("/api/health")
 def health():
     return jsonify({"ok": True, "service": "cs2-api"})
