@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CS2 Skin Tracker</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* ── RESET & ROOT ────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:        #0a0a0f;
+    --bg2:       #111118;
+    --card:      #16161f;
+    --card2:     #1c1c28;
+    --border:    #2a2a3a;
+    --orange:    #e4a625;
+    --orange2:   #f0c060;
+    --cyan:      #00c8ff;
+    --green:     #39d353;
+    --red:       #ff4545;
+    --text:      #e8e8f0;
+    --text2:     #9090a8;
+    --text3:     #606078;
+    --nav-h:     60px;
+    --head-h:    56px;
+  }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', system-ui, sans-serif;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+  button { cursor: pointer; border: none; outline: none; font-family: inherit; }
+  input  { outline: none; font-family: inherit; }
+
+  /* ── BACKGROUND GRID ─────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.25;
+  }
+
+  /* ── LAYOUT ──────────────────────────────────────────────── */
+  #app { position: relative; z-index: 1; height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── HEADER ──────────────────────────────────────────────── */
+  .header {
+    height: var(--head-h);
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .header::after {
+    content: '';
+    position: absolute; bottom: -2px; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--orange), transparent);
+  }
+  .header-logo {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .header-logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--orange), #b07800);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #000;
+  }
+  .header-title {
+    font-size: 18px; font-weight: 700; letter-spacing: 2px;
+    color: var(--orange); text-transform: uppercase;
+  }
+  .header-sub {
+    font-size: 10px; color: var(--text3); letter-spacing: 1px; line-height: 1;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .header-user {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .header-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid var(--orange);
+    background: var(--card2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: var(--orange); font-weight: 700;
+    overflow: hidden;
+  }
+  .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* ── NAV ─────────────────────────────────────────────────── */
+  .nav {
+    height: var(--nav-h);
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .nav-btn {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    background: none; color: var(--text3);
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    font-family: 'Share Tech Mono', monospace;
+    transition: color 0.2s;
+    position: relative;
+  }
+  .nav-btn svg { width: 20px; height: 20px; }
+  .nav-btn.active { color: var(--orange); }
+  .nav-btn.active::before {
+    content: '';
+    position: absolute; top: 0; left: 20%; right: 20%; height: 2px;
+    background: var(--orange);
+    box-shadow: 0 0 8px var(--orange);
+  }
+
+  /* ── CONTENT ─────────────────────────────────────────────── */
+  .content {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: 12px 12px 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .content::-webkit-scrollbar { width: 3px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── SEARCH INPUT ────────────────────────────────────────── */
+  .search-wrap {
+    position: relative; margin-bottom: 14px;
+  }
+  .search-input {
+    width: 100%; height: 44px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 15px;
+    padding: 0 44px 0 16px;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--orange); }
+  .search-input::placeholder { color: var(--text3); }
+  .search-btn {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 44px;
+    background: var(--orange);
+    color: #000; font-size: 16px;
+    clip-path: polygon(12px 0, 100% 0, 100% 100%, 0 100%);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .search-btn:active { background: var(--orange2); }
+
+  /* ── SKIN CARD ───────────────────────────────────────────── */
+  .skin-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    margin-bottom: 10px;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .skin-card:active { border-color: var(--orange); }
+  .skin-card-inner {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+  }
+  .skin-img {
+    width: 72px; height: 54px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .skin-img img { width: 100%; height: 100%; object-fit: contain; }
+  .skin-img-placeholder {
+    color: var(--text3); font-size: 22px;
+  }
+  .skin-info { flex: 1; min-width: 0; }
+  .skin-name {
+    font-size: 14px; font-weight: 600;
+    color: var(--text); line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .skin-meta {
+    font-size: 11px; color: var(--text3); margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .skin-prices { text-align: right; flex-shrink: 0; }
+  .price-lowest {
+    font-size: 17px; font-weight: 700; color: var(--orange);
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .price-median {
+    font-size: 11px; color: var(--text3); margin-top: 1px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .price-change {
+    font-size: 11px; font-weight: 600;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .price-change.up   { color: var(--green); }
+  .price-change.down { color: var(--red); }
+
+  /* skin card top stripe by rarity */
+  .skin-card::before {
+    content: ''; display: block; height: 2px;
+    background: linear-gradient(90deg, var(--orange), transparent);
+  }
+
+  /* ── SKIN DETAIL (expanded) ──────────────────────────────── */
+  .skin-detail { padding: 0 14px 14px; border-top: 1px solid var(--border); }
+  .detail-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-label { color: var(--text2); }
+  .detail-val { font-weight: 600; color: var(--text); font-family: 'Share Tech Mono', monospace; }
+  .detail-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .btn {
+    flex: 1; height: 36px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    transition: opacity 0.15s;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+  .btn:active { opacity: 0.75; }
+  .btn-primary { background: var(--orange); color: #000; }
+  .btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+
+  /* ── SECTION HEADER ──────────────────────────────────────── */
+  .sec-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .sec-title {
+    font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sec-title::before {
+    content: '';
+    width: 3px; height: 14px;
+    background: var(--orange);
+    display: block;
+  }
+  .sec-badge {
+    font-size: 11px; color: var(--text3); font-family: 'Share Tech Mono', monospace;
+  }
+
+  /* ── PORTFOLIO ───────────────────────────────────────────── */
+  .portfolio-summary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    position: relative;
+  }
+  .portfolio-summary::before {
+    content: ''; display: block;
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--cyan), transparent);
+  }
+  .summary-item { }
+  .summary-label { font-size: 10px; letter-spacing: 1px; color: var(--text3); text-transform: uppercase; }
+  .summary-val {
+    font-size: 20px; font-weight: 700; margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .summary-val.pos { color: var(--green); }
+  .summary-val.neg { color: var(--red); }
+  .summary-val.neutral { color: var(--orange); }
+
+  .portfolio-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+  .portfolio-item-info { flex: 1; min-width: 0; }
+  .portfolio-item-name {
+    font-size: 13px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .portfolio-item-bought {
+    font-size: 11px; color: var(--text3); margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .portfolio-item-right { text-align: right; flex-shrink: 0; }
+  .portfolio-item-current {
+    font-size: 15px; font-weight: 700; color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .portfolio-item-pnl {
+    font-size: 11px; font-weight: 700; margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .portfolio-item-pnl.pos { color: var(--green); }
+  .portfolio-item-pnl.neg { color: var(--red); }
+
+  .portfolio-add-btn {
+    width: 100%; height: 44px;
+    background: transparent; color: var(--orange);
+    border: 1px dashed var(--orange);
+    font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; margin-top: 4px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    opacity: 0.7; transition: opacity 0.15s;
+  }
+  .portfolio-add-btn:active { opacity: 1; }
+
+  /* ── WATCHLIST ───────────────────────────────────────────── */
+  .watch-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    padding: 10px 14px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    position: relative;
+  }
+  .watch-item-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .watch-item-name {
+    font-size: 13px; font-weight: 600;
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-right: 8px;
+  }
+  .watch-del-btn {
+    background: none; color: var(--text3); font-size: 16px;
+    padding: 0 4px; flex-shrink: 0;
+    transition: color 0.15s;
+  }
+  .watch-del-btn:hover { color: var(--red); }
+  .watch-item-body {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 8px;
+  }
+  .watch-condition {
+    font-size: 11px; color: var(--text3);
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .watch-condition span { color: var(--orange); font-weight: 700; }
+  .watch-status {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-family: 'Share Tech Mono', monospace;
+  }
+  .watch-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  .watch-dot.active { background: var(--green); }
+  .watch-dot.wait   { background: var(--orange); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── TOP ─────────────────────────────────────────────────── */
+  .top-tabs {
+    display: flex; gap: 8px; margin-bottom: 14px;
+  }
+  .top-tab {
+    flex: 1; height: 34px;
+    background: var(--card); color: var(--text3);
+    border: 1px solid var(--border);
+    font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+    font-family: 'Share Tech Mono', monospace;
+    clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+    transition: all 0.2s;
+  }
+  .top-tab.active { background: var(--orange); color: #000; border-color: var(--orange); }
+
+  .top-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+  .top-rank {
+    font-size: 18px; font-weight: 700; color: var(--text3);
+    font-family: 'Share Tech Mono', monospace;
+    width: 28px; text-align: center; flex-shrink: 0;
+  }
+  .top-rank.gold   { color: #ffd700; }
+  .top-rank.silver { color: #c0c0c0; }
+  .top-rank.bronze { color: #cd7f32; }
+  .top-item-info { flex: 1; min-width: 0; }
+  .top-item-name {
+    font-size: 13px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .top-item-vol {
+    font-size: 11px; color: var(--text3); margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .top-item-price {
+    font-size: 16px; font-weight: 700; color: var(--orange);
+    font-family: 'Share Tech Mono', monospace;
+    text-align: right; flex-shrink: 0;
+  }
+
+  /* ── EMPTY STATE ─────────────────────────────────────────── */
+  .empty {
+    text-align: center; padding: 48px 20px;
+    color: var(--text3);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+  .empty-text { font-size: 14px; line-height: 1.6; }
+
+  /* ── LOADING ─────────────────────────────────────────────── */
+  .loading {
+    text-align: center; padding: 32px 20px;
+    color: var(--text3);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px; letter-spacing: 2px;
+  }
+  .loading::after {
+    content: '';
+    animation: dots 1.2s infinite;
+  }
+  @keyframes dots {
+    0%   { content: '.'; }
+    33%  { content: '..'; }
+    66%  { content: '...'; }
+    100% { content: ''; }
+  }
+
+  /* ── TOAST ───────────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%);
+    background: var(--card2); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 20px;
+    font-size: 13px; font-weight: 600;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    white-space: nowrap; z-index: 999;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+  .toast.ok   { border-color: var(--green); color: var(--green); }
+  .toast.err  { border-color: var(--red);   color: var(--red); }
+
+  /* ── MODAL ───────────────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(10,10,15,0.85);
+    display: flex; align-items: flex-end;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal {
+    width: 100%;
+    background: var(--bg2);
+    border-top: 2px solid var(--orange);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 20px 16px 32px;
+    transform: translateY(100%);
+    transition: transform 0.25s;
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal-title {
+    font-size: 16px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--orange); margin-bottom: 16px;
+  }
+  .modal-input {
+    width: 100%; height: 44px;
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); font-size: 15px; padding: 0 14px;
+    margin-bottom: 12px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+  .modal-input:focus { border-color: var(--orange); }
+  .modal-input::placeholder { color: var(--text3); }
+  .modal-close {
+    position: absolute; right: 16px; top: 16px;
+    background: none; color: var(--text3); font-size: 20px;
+  }
+  .modal-close:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-logo">
+      <div class="header-logo-icon">⬡</div>
+      <div>
+        <div class="header-title">CS2 TRACKER</div>
+        <div class="header-sub">SKIN PRICE MONITOR</div>
+      </div>
+    </div>
+    <div class="header-user">
+      <div class="header-avatar" id="userAvatar">?</div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content" id="content">
+
+    <!-- SEARCH -->
+    <div class="section active" id="sec-search">
+      <div class="search-wrap">
+        <input class="search-input" id="searchInput" type="text"
+          placeholder="AK-47 | Redline, AWP | Asiimov..."
+          autocomplete="off" autocorrect="off" autocapitalize="off">
+        <button class="search-btn" id="searchBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+      </div>
+      <div id="searchResults"></div>
+    </div>
+
+    <!-- PORTFOLIO -->
+    <div class="section" id="sec-portfolio">
+      <div class="sec-header">
+        <div class="sec-title">Мой портфель</div>
+        <div class="sec-badge" id="portfolioDate">—</div>
+      </div>
+      <div id="portfolioContent"></div>
+    </div>
+
+    <!-- WATCHLIST -->
+    <div class="section" id="sec-watch">
+      <div class="sec-header">
+        <div class="sec-title">Вотчлист</div>
+        <div class="sec-badge" id="watchCount">0 скинов</div>
+      </div>
+      <div id="watchContent"></div>
+    </div>
+
+    <!-- TOP -->
+    <div class="section" id="sec-top">
+      <div class="sec-header">
+        <div class="sec-title">Топ CS2</div>
+      </div>
+      <div class="top-tabs">
+        <button class="top-tab active" data-top="expensive">💎 Дорогие</button>
+        <button class="top-tab" data-top="popular">🔥 Популярные</button>
+      </div>
+      <div id="topContent"></div>
+    </div>
+
+  </div><!-- /content -->
+
+  <!-- NAV -->
+  <nav class="nav">
+    <button class="nav-btn active" data-sec="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      Поиск
+    </button>
+    <button class="nav-btn" data-sec="portfolio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="7" width="20" height="14" rx="1"/>
+        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+      </svg>
+      Портфель
+    </button>
+    <button class="nav-btn" data-sec="watch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      Вотчлист
+    </button>
+    <button class="nav-btn" data-sec="top">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
+      Топ
+    </button>
+  </nav>
+
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ADD TO PORTFOLIO MODAL -->
+<div class="modal-overlay" id="addPortfolioModal">
+  <div class="modal" style="position:relative">
+    <div class="modal-title">+ Добавить в портфель</div>
+    <button class="modal-close" id="closePortfolioModal">✕</button>
+    <div id="modalSkinName" style="font-size:13px;color:var(--text2);margin-bottom:12px;"></div>
+    <input class="modal-input" id="buyPriceInput" type="number" placeholder="Цена покупки (руб.)" min="0" step="1">
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <button class="btn btn-primary" id="confirmAddPortfolio">ДОБАВИТЬ</button>
+      <button class="btn btn-secondary" id="cancelAddPortfolio">ОТМЕНА</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const API_BASE = 'http://138.2.228.123:8001';
+const CURRENCY = 'RUB';
+const SYMBOL   = 'руб.';
+
+// ─── TELEGRAM WEBAPP ──────────────────────────────────────────────────────────
+const tg = window.Telegram?.WebApp;
+let userId = null;
+let userName = '';
+
+if (tg) {
+  tg.ready();
+  tg.expand();
+  const user = tg.initDataUnsafe?.user;
+  if (user) {
+    userId   = user.id;
+    userName = user.first_name || '';
+    const av = document.getElementById('userAvatar');
+    if (user.photo_url) {
+      av.innerHTML = `<img src="${user.photo_url}" alt="">`;
+    } else {
+      av.textContent = (user.first_name || '?')[0].toUpperCase();
+    }
+  }
+}
+
+// ─── API ──────────────────────────────────────────────────────────────────────
+async function api(path, params = {}) {
+  const q = new URLSearchParams({ ...params, user_id: userId || 0, currency: CURRENCY });
+  try {
+    const r = await fetch(`${API_BASE}${path}?${q}`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch(e) {
+    console.warn('API error:', path, e);
+    return null;
+  }
+}
+
+// ─── NAVIGATION ──────────────────────────────────────────────────────────────
+const sections = { search: null, portfolio: null, watch: null, top: null };
+let activeSection = 'search';
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const sec = btn.dataset.sec;
+    if (sec === activeSection) return;
+    switchSection(sec);
+  });
+});
+
+function switchSection(sec) {
+  document.querySelector('.section.active')?.classList.remove('active');
+  document.querySelector('.nav-btn.active')?.classList.remove('active');
+  document.getElementById(`sec-${sec}`).classList.add('active');
+  document.querySelector(`.nav-btn[data-sec="${sec}"]`).classList.add('active');
+  activeSection = sec;
+  if (!sections[sec]) loadSection(sec);
+}
+
+function loadSection(sec) {
+  sections[sec] = true;
+  if (sec === 'portfolio') loadPortfolio();
+  if (sec === 'watch')     loadWatchlist();
+  if (sec === 'top')       loadTop('expensive');
+}
+
+// ─── SEARCH ──────────────────────────────────────────────────────────────────
+const searchInput = document.getElementById('searchInput');
+const searchBtn   = document.getElementById('searchBtn');
+const searchRes   = document.getElementById('searchResults');
+let searchTimeout = null;
+let expandedCard  = null;
+let pendingPortfolioSkin = null;
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { searchRes.innerHTML = ''; return; }
+  searchTimeout = setTimeout(() => doSearch(q), 600);
+});
+searchBtn.addEventListener('click', () => {
+  const q = searchInput.value.trim();
+  if (q.length >= 2) doSearch(q);
+});
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const q = searchInput.value.trim(); if (q.length >= 2) doSearch(q); }
+});
+
+async function doSearch(q) {
+  searchRes.innerHTML = `<div class="loading">ПОИСК</div>`;
+  const data = await api('/api/search', { q });
+  if (!data || !data.items?.length) {
+    searchRes.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">Ничего не найдено<br><span style="color:var(--text3);font-size:12px;">Попробуй точное название из Steam Market</span></div></div>`;
+    return;
+  }
+  searchRes.innerHTML = data.items.map((item, i) => skinCardHTML(item, i)).join('');
+  searchRes.querySelectorAll('.skin-card').forEach(card => {
+    card.addEventListener('click', () => toggleCardDetail(card));
+  });
+}
+
+function skinCardHTML(item, i) {
+  const price = item.lowest_price ? `<div class="price-lowest">${fmt(item.lowest_price)} ${SYMBOL}</div><div class="price-median">ср. ${fmt(item.median_price)} ${SYMBOL}</div>` : `<div class="price-lowest" style="color:var(--text3)">—</div>`;
+  return `
+  <div class="skin-card" data-name="${esc(item.name)}" data-lowest="${item.lowest_price||0}" data-median="${item.median_price||0}">
+    <div class="skin-card-inner">
+      <div class="skin-img">
+        ${item.image ? `<img src="${item.image}" alt="" loading="lazy">` : `<div class="skin-img-placeholder">🔫</div>`}
+      </div>
+      <div class="skin-info">
+        <div class="skin-name">${esc(item.name)}</div>
+        <div class="skin-meta">VOL: ${item.volume || '—'}</div>
+      </div>
+      <div class="skin-prices">${price}</div>
+    </div>
+  </div>`;
+}
+
+async function toggleCardDetail(card) {
+  if (expandedCard && expandedCard !== card) {
+    expandedCard.querySelector('.skin-detail')?.remove();
+    expandedCard = null;
+  }
+  if (card.querySelector('.skin-detail')) {
+    card.querySelector('.skin-detail').remove();
+    expandedCard = null;
+    return;
+  }
+  expandedCard = card;
+  const name    = card.dataset.name;
+  const lowest  = parseFloat(card.dataset.lowest) || 0;
+  const median  = parseFloat(card.dataset.median) || 0;
+
+  const div = document.createElement('div');
+  div.className = 'skin-detail';
+  div.innerHTML = `
+    <div class="detail-row"><span class="detail-label">Скин</span><span class="detail-val" style="font-size:11px;max-width:60%;text-align:right;white-space:normal;">${esc(name)}</span></div>
+    <div class="detail-row"><span class="detail-label">Минимальная</span><span class="detail-val">${fmt(lowest)} ${SYMBOL}</span></div>
+    <div class="detail-row"><span class="detail-label">Средняя</span><span class="detail-val">${fmt(median)} ${SYMBOL}</span></div>
+    <div class="detail-actions">
+      <button class="btn btn-primary" onclick="openAddPortfolio('${esc(name)}', ${lowest})">+ Портфель</button>
+      <button class="btn btn-secondary" onclick="addToWatch('${esc(name)}', ${lowest})">👁 Следить</button>
+    </div>`;
+  card.appendChild(div);
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ─── PORTFOLIO ────────────────────────────────────────────────────────────────
+async function loadPortfolio() {
+  const el = document.getElementById('portfolioContent');
+  el.innerHTML = `<div class="loading">ЗАГРУЗКА</div>`;
+  const data = await api('/api/portfolio');
+  renderPortfolio(data);
+}
+
+function renderPortfolio(data) {
+  const el = document.getElementById('portfolioContent');
+  document.getElementById('portfolioDate').textContent = new Date().toLocaleDateString('ru-RU');
+
+  if (!data || !data.items?.length) {
+    el.innerHTML = `
+      <div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Портфель пуст<br><span style="color:var(--text3);font-size:12px;">Ищи скин и нажми «+ Портфель»</span></div></div>
+      <button class="portfolio-add-btn" onclick="switchSection('search')">+ ДОБАВИТЬ СКИН</button>`;
+    return;
+  }
+
+  let totalBuy = 0, totalCurrent = 0;
+  data.items.forEach(it => { totalBuy += it.buy_price; totalCurrent += it.current_price || it.buy_price; });
+  const pnl = totalCurrent - totalBuy;
+  const pnlPct = totalBuy > 0 ? ((pnl / totalBuy) * 100).toFixed(1) : '0.0';
+
+  const summaryHTML = `
+  <div class="portfolio-summary">
+    <div class="summary-item">
+      <div class="summary-label">Вложено</div>
+      <div class="summary-val neutral">${fmt(totalBuy)}<span style="font-size:11px;"> ${SYMBOL}</span></div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Текущая стоимость</div>
+      <div class="summary-val neutral">${fmt(totalCurrent)}<span style="font-size:11px;"> ${SYMBOL}</span></div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Прибыль / Убыток</div>
+      <div class="summary-val ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}${fmt(pnl)}<span style="font-size:11px;"> ${SYMBOL}</span></div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Изменение</div>
+      <div class="summary-val ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}${pnlPct}%</div>
+    </div>
+  </div>`;
+
+  const itemsHTML = data.items.map(it => {
+    const cur = it.current_price || it.buy_price;
+    const p = cur - it.buy_price;
+    const pPct = it.buy_price > 0 ? ((p / it.buy_price) * 100).toFixed(1) : '0.0';
+    return `
+    <div class="portfolio-item">
+      <div class="portfolio-item-info">
+        <div class="portfolio-item-name">${esc(it.name)}</div>
+        <div class="portfolio-item-bought">куплено: ${fmt(it.buy_price)} ${SYMBOL}</div>
+      </div>
+      <div class="portfolio-item-right">
+        <div class="portfolio-item-current">${fmt(cur)} ${SYMBOL}</div>
+        <div class="portfolio-item-pnl ${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '+' : ''}${fmt(p)} (${p >= 0 ? '+' : ''}${pPct}%)</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = summaryHTML + itemsHTML + `<button class="portfolio-add-btn" onclick="switchSection('search')">+ ДОБАВИТЬ СКИН</button>`;
+}
+
+// add-to-portfolio modal
+function openAddPortfolio(name, suggestedPrice) {
+  pendingPortfolioSkin = name;
+  document.getElementById('modalSkinName').textContent = name;
+  document.getElementById('buyPriceInput').value = suggestedPrice ? Math.round(suggestedPrice) : '';
+  document.getElementById('addPortfolioModal').classList.add('open');
+}
+
+document.getElementById('closePortfolioModal').onclick  = closePortfolioModal;
+document.getElementById('cancelAddPortfolio').onclick   = closePortfolioModal;
+document.getElementById('addPortfolioModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closePortfolioModal();
+});
+function closePortfolioModal() {
+  document.getElementById('addPortfolioModal').classList.remove('open');
+  pendingPortfolioSkin = null;
+}
+
+document.getElementById('confirmAddPortfolio').onclick = async () => {
+  const price = parseFloat(document.getElementById('buyPriceInput').value);
+  if (!pendingPortfolioSkin || !price || price <= 0) { showToast('Введи корректную цену', 'err'); return; }
+  closePortfolioModal();
+  const r = await api('/api/portfolio/add', { name: pendingPortfolioSkin, buy_price: price });
+  if (r?.ok) {
+    showToast('Добавлено в портфель ✓', 'ok');
+    sections.portfolio = null; // force reload
+  } else {
+    showToast('Ошибка добавления', 'err');
+  }
+};
+
+// ─── WATCHLIST ────────────────────────────────────────────────────────────────
+async function loadWatchlist() {
+  const el = document.getElementById('watchContent');
+  el.innerHTML = `<div class="loading">ЗАГРУЗКА</div>`;
+  const data = await api('/api/watchlist');
+  renderWatchlist(data);
+}
+
+function renderWatchlist(data) {
+  const el = document.getElementById('watchContent');
+  if (!data || !data.items?.length) {
+    document.getElementById('watchCount').textContent = '0 скинов';
+    el.innerHTML = `<div class="empty"><div class="empty-icon">👁</div><div class="empty-text">Вотчлист пуст<br><span style="color:var(--text3);font-size:12px;">Найди скин и нажми «Следить»</span></div></div>`;
+    return;
+  }
+  document.getElementById('watchCount').textContent = `${data.items.length} скинов`;
+  el.innerHTML = data.items.map(it => {
+    const condText = it.condition === 'below'
+      ? `ниже <span>${fmt(it.threshold)} ${SYMBOL}</span>`
+      : `выше <span>${fmt(it.threshold)} ${SYMBOL}</span>`;
+    return `
+    <div class="watch-item">
+      <div class="watch-item-header">
+        <div class="watch-item-name">${esc(it.name)}</div>
+        <button class="watch-del-btn" onclick="removeWatch(${it.id}, this)">✕</button>
+      </div>
+      <div class="watch-item-body">
+        <div class="watch-condition">Уведомить если ${condText}</div>
+        <div class="watch-status"><div class="watch-dot active"></div><span style="color:var(--text3)">слежу</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addToWatch(name, price) {
+  const threshold = price ? Math.round(price * 0.9) : 0;
+  const r = await api('/api/watchlist/add', { name, condition: 'below', threshold });
+  if (r?.ok) {
+    showToast('Добавлено в вотчлист ✓', 'ok');
+    sections.watch = null;
+  } else {
+    showToast('Ошибка. Попробуй в боте.', 'err');
+  }
+}
+
+async function removeWatch(id, btn) {
+  btn.closest('.watch-item').style.opacity = '0.4';
+  const r = await api('/api/watchlist/remove', { id });
+  if (r?.ok) {
+    sections.watch = null;
+    loadWatchlist();
+    showToast('Удалено из вотчлиста', 'ok');
+  } else {
+    btn.closest('.watch-item').style.opacity = '1';
+    showToast('Ошибка удаления', 'err');
+  }
+}
+
+// ─── TOP ──────────────────────────────────────────────────────────────────────
+let currentTopType = 'expensive';
+
+document.querySelectorAll('.top-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentTopType = tab.dataset.top;
+    loadTop(currentTopType);
+  });
+});
+
+async function loadTop(type) {
+  const el = document.getElementById('topContent');
+  el.innerHTML = `<div class="loading">ЗАГРУЗКА</div>`;
+  const data = await api('/api/top', { type });
+  renderTop(data, type);
+}
+
+function renderTop(data, type) {
+  const el = document.getElementById('topContent');
+  if (!data || !data.items?.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Нет данных</div></div>`;
+    return;
+  }
+  const rankClass = (i) => i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+  el.innerHTML = data.items.map((it, i) => `
+    <div class="top-item">
+      <div class="top-rank ${rankClass(i)}">${i + 1}</div>
+      <div class="top-img skin-img" style="width:56px;height:42px;">
+        ${it.image ? `<img src="${it.image}" alt="" loading="lazy">` : '<div class="skin-img-placeholder" style="font-size:18px">🔫</div>'}
+      </div>
+      <div class="top-item-info">
+        <div class="top-item-name">${esc(it.name)}</div>
+        <div class="top-item-vol">${type === 'popular' ? `объём: ${it.volume || '—'}` : `ср. ${fmt(it.median_price)} ${SYMBOL}`}</div>
+      </div>
+      <div class="top-item-price">${fmt(it.lowest_price)} ${SYMBOL}</div>
+    </div>`).join('');
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function fmt(n) {
+  if (!n && n !== 0) return '—';
+  return parseFloat(n).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let toastTimer = null;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// hint if not in tg
+if (!tg) {
+  showToast('Откройте через Telegram', '');
+}
+</script>
+</body>
+</html>
