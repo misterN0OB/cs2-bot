@@ -25,6 +25,7 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     LabeledPrice,
+    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -115,6 +116,7 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
         ["Добавить отслеживание", "Топ скины"],
         ["Портфель", "Настройки"],
         ["Написать нам", "Поделиться с другом"],
+        ["📊 Открыть трекер"],
     ],
     resize_keyboard=True
 )
@@ -443,12 +445,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Названия скинов можно вводить на русском или английском."
     )
 
+    # Инлайн-кнопка для открытия Mini App
+    webapp_keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "📊 Открыть трекер",
+            web_app=WebAppInfo(url="https://mistern0ob.github.io/cs2-bot/")
+        )
+    ]])
+
     # Если картинка welcome.jpg лежит в папке — отправляем её
     if os.path.exists(WELCOME_IMAGE_PATH):
         with open(WELCOME_IMAGE_PATH, "rb") as img:
             await update.message.reply_photo(photo=img, caption=text, parse_mode="HTML", reply_markup=MAIN_KEYBOARD)
     else:
         await update.message.reply_text(text, parse_mode="HTML", reply_markup=MAIN_KEYBOARD)
+
+    # Отдельное сообщение с кнопкой открытия Mini App
+    await update.message.reply_text(
+        "Или открой визуальный трекер:",
+        reply_markup=webapp_keyboard
+    )
 
 
 # =============================================================
