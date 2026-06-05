@@ -12,9 +12,12 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 try:
-    from config import ADMIN_ID
+    from config import ADMIN_CHAT_ID as ADMIN_ID
 except ImportError:
-    ADMIN_ID = 0
+    try:
+        from config import ADMIN_ID
+    except ImportError:
+        ADMIN_ID = 0
 
 app = Flask(__name__)
 CORS(app)  # разрешаем запросы из Telegram WebApp
@@ -417,28 +420,27 @@ def route_user_status():
     user_id = request.args.get("user_id", 0, type=int)
     if not user_id:
         return jsonify({"premium": False, "referrals": 0, "bonus_views": 0})
+    # Администратор всегда premium
+    if ADMIN_ID and user_id == ADMIN_ID:
+        return jsonify({"premium": True, "referrals": 0, "bonus_views": 999})
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            # Проверяем premium
             row = conn.execute(
                 "SELECT premium, bonus_compares FROM user_settings WHERE user_id=?",
                 (user_id,)
             ).fetchone()
             premium = bool(row[0]) if row else False
             bonus = row[1] if row else 0
-
-            # Количество приглашённых
             ref_count = conn.execute(
                 "SELECT COUNT(*) FROM referrals WHERE referrer_id=?",
                 (user_id,)
             ).fetchone()[0]
-
         return jsonify({
             "premium": premium,
             "referrals": ref_count,
-            "bonus_views": bonus * 5,  # каждый реферал = 5 просмотров
+            "bonus_views": bonus * 5,
         })
-    except Exception as e:
+    except Exception:
         return jsonify({"premium": False, "referrals": 0, "bonus_views": 0})
 
 

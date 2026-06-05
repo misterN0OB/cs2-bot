@@ -99,7 +99,7 @@ PRICE_CHECK_INTERVAL = 3600
 
 # Стоимость Premium в Telegram Stars.
 # 1 Star ≈ $0.013. 199 Stars ≈ $2.60 — разовая покупка навсегда.
-PREMIUM_PRICE_STARS = 199
+PREMIUM_PRICE_STARS = 200
 
 # Минимальный промежуток между уведомлениями по одному скину (в часах).
 # Защищает от спама если цена держится ниже порога несколько дней подряд.
@@ -1525,6 +1525,24 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer(ok=True)
 
 
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик данных от Telegram Mini App (tg.sendData)."""
+    data = update.message.web_app_data.data if update.message.web_app_data else ""
+    user_id = update.effective_user.id
+
+    if data == "buy_premium":
+        # Выставляем инвойс на 200 Stars
+        await context.bot.send_invoice(
+            chat_id=user_id,
+            title="CS2 Tracker Premium",
+            description="Безлимитные просмотры цен, аналитика и история за 30 дней. Навсегда.",
+            payload="premium_purchase",
+            provider_token="",
+            currency="XTR",
+            prices=[LabeledPrice("Premium навсегда", 200)],
+        )
+
+
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Вызывается когда пользователь успешно оплатил Stars.
@@ -1665,6 +1683,7 @@ if __name__ == "__main__":
     app = Application.builder().token(BOT_TOKEN).request(request).build()
 
     # Регистрируем обработчики
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("watch", watch))
@@ -1681,6 +1700,7 @@ if __name__ == "__main__":
     # SUCCESSFUL_PAYMENT — выдаём Premium после успешной оплаты.
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
 
     # Фоновая задача проверки цен
     # first=60 — первый запуск через 60 секунд после старта бота

@@ -288,7 +288,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 /* SUGGESTIONS */
 .suggestions{margin-bottom:10px}
 .suggest-item{display:inline-block;background:var(--card);border:1px solid var(--border);
-  color:var(--text2);font-size:10px;padding:4px 8px;margin:0 4px 4px 0;cursor:pointer;
+  color:var(--text2);font-size:13px;font-weight:600;padding:6px 12px;margin:0 6px 6px 0;cursor:pointer;
   clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px));
   transition:all .15s}
 .suggest-item:active{background:var(--orange);color:#000;border-color:var(--orange)}
@@ -417,13 +417,13 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
-const API   = 'http://138.2.228.123';
+const API   = 'https://super-kept-filename-infringement.trycloudflare.com';
 const SYM   = 'руб.';
 const CUR   = 'RUB';
 const APP_URL = 'https://mistern0ob.github.io/cs2-bot/';
 
 // Free tier limits
-const FREE_VIEWS_PER_WEEK = 10;
+const FREE_VIEWS_PER_WEEK = 5;
 const WEEK_KEY  = 'views_week';
 const COUNT_KEY = 'views_count';
 
@@ -772,8 +772,8 @@ async function renderPremium() {
       <div class="prem-feat"><div class="feat-icon">✅</div>Портфель без ограничений</div>
     </div>
     <div class="prem-price-block">
-      <div class="prem-price">299 ${SYM}</div>
-      <div class="prem-period">в месяц</div>
+      <div class="prem-price">⭐ 200 Stars</div>
+      <div class="prem-period">в месяц · оплата через Telegram</div>
     </div>
     <button class="prem-buy-btn" onclick="buyPremium()">⭐ КУПИТЬ ПРЕМИУМ</button>`:''}
 
@@ -793,8 +793,12 @@ async function renderPremium() {
 }
 
 function buyPremium() {
-  if (tg) tg.openTelegramLink(`https://t.me/cs2skinprice_bot?start=premium`);
-  else showToast('Открой через Telegram','err');
+  if (tg) {
+    // Отправляем данные боту и закрываем Mini App — бот выставит инвойс
+    tg.sendData('buy_premium');
+  } else {
+    showToast('Открой через Telegram','err');
+  }
 }
 function copyRef(link) {
   if (navigator.clipboard) navigator.clipboard.writeText(link).then(()=>showToast('Ссылка скопирована ✓','ok'));
