@@ -620,11 +620,18 @@ async function doSearch(q) {
   incrementViews();
   searchRes.innerHTML = `<div class="loading">ПОИСК</div>`;
   const data = await api('/api/search', {q});
-  if (!data?.items?.length) {
+  // API недоступен
+  if (data === null) {
+    searchRes.innerHTML = `<div class="empty"><div class="empty-icon">📡</div>
+      <div class="empty-text">Нет соединения с сервером<br>
+      <span style="font-size:11px;color:var(--text3)">Попробуй позже</span></div></div>`;
+    return;
+  }
+  // Ничего не найдено
+  if (!data.items?.length) {
     searchRes.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div>
       <div class="empty-text">Ничего не найдено<br>
-      <span style="font-size:11px;color:var(--text3)">Попробуй: AK-47 Redline или AWP Asiimov</span></div></div>
-      ${premiumBanner()}`;
+      <span style="font-size:11px;color:var(--text3)">Попробуй: AK-47 Redline или AWP Asiimov</span></div></div>`;
     return;
   }
   searchRes.innerHTML = data.items.map(skinCardHTML).join('') + premiumBanner();

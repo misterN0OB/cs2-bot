@@ -45,9 +45,7 @@ TOP_EXPENSIVE = [
     "AK-47 | Gold Arabesque (Factory New)",
     "Karambit | Doppler (Factory New)",
     "AWP | Medusa (Factory New)",
-    "AK-47 | Fire Serpent (Factory New)",
-    "Butterfly Knife | Doppler (Factory New)",
-    "AWP | Fade (Factory New)",
+    "AK-47 | Fire Serpent (Field-Tested)",
 ]
 
 TOP_POPULAR = [
@@ -58,10 +56,11 @@ TOP_POPULAR = [
     "AWP | Hyper Beast (Field-Tested)",
     "Glock-18 | Water Elemental (Factory New)",
     "M4A1-S | Hyper Beast (Field-Tested)",
-    "AK-47 | Neon Revolution (Field-Tested)",
     "USP-S | Kill Confirmed (Field-Tested)",
-    "AWP | Electric Hive (Field-Tested)",
 ]
+
+# Кэш изображений — заполняется при первом поиске каждого скина
+_image_cache: dict = {}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,6 +183,9 @@ def search_steam(query: str, currency: str = "RUB") -> list:
             asset = item.get("asset_description", {})
             if asset.get("icon_url"):
                 image = f"https://steamcommunity-a.akamaihd.net/economy/image/{asset['icon_url']}/128x96"
+                # Кэшируем изображение по имени скина
+                if name:
+                    _image_cache[name] = image
             # Цену из поиска НЕ используем (US IP возвращает USD центы)
             # Получаем через priceoverview
             price_data = get_price_steam(name, currency)
@@ -356,7 +358,7 @@ def route_home():
                 "lowest_price": p["lowest_price"],
                 "median_price": p["median_price"],
                 "volume": p["volume"],
-                "image": "",
+                "image": _image_cache.get(name, ""),
                 "change": None,
             })
 
@@ -370,7 +372,7 @@ def route_home():
                 "lowest_price": p["lowest_price"],
                 "median_price": p["median_price"],
                 "volume": p["volume"],
-                "image": "",
+                "image": _image_cache.get(name, ""),
                 "change": None,
             })
 
@@ -401,7 +403,7 @@ def route_home():
                     "lowest_price": p["lowest_price"] if p else new_p,
                     "median_price": p["median_price"] if p else new_p,
                     "volume": p["volume"] if p else "—",
-                    "image": "",
+                    "image": _image_cache.get(name, ""),
                     "change": change,
                 })
     except Exception as e:
