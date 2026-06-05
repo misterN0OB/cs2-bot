@@ -617,7 +617,6 @@ async function doSearch(q) {
     searchRes.innerHTML = lockedHTML('Исчерпан лимит просмотров на эту неделю.');
     return;
   }
-  incrementViews();
   searchRes.innerHTML = `<div class="loading">ПОИСК</div>`;
   const data = await api('/api/search', {q});
   // API недоступен
@@ -634,6 +633,8 @@ async function doSearch(q) {
       <span style="font-size:11px;color:var(--text3)">Попробуй: AK-47 Redline или AWP Asiimov</span></div></div>`;
     return;
   }
+  // Считаем просмотр только при успешном результате
+  incrementViews();
   searchRes.innerHTML = data.items.map(skinCardHTML).join('') + premiumBanner();
   renderLimitBar(searchRes);
   searchRes.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => toggleDetail(c)));
@@ -714,6 +715,7 @@ document.getElementById('portModalClose').onclick=closePortModal;
 document.getElementById('portModalCancel').onclick=closePortModal;
 document.getElementById('portModal').addEventListener('click',e=>{ if(e.target===e.currentTarget) closePortModal(); });
 document.getElementById('portModalConfirm').onclick = async()=>{
+  if(!userId){showToast('Открой через Telegram','err');closePortModal();return;}
   const p=parseFloat(document.getElementById('portModalPrice').value);
   if(!pendingSkinName||!p||p<=0){showToast('Введи корректную цену','err');return;}
   closePortModal();
@@ -746,6 +748,7 @@ async function loadWatch() {
 }
 
 async function addWatch(name, price) {
+  if(!userId){showToast('Открой через Telegram','err');return;}
   const threshold = price ? Math.round(price*0.9) : 0;
   const r = await api('/api/watchlist/add',{name,condition:'below',threshold});
   if(r?.ok){showToast('Добавлено в вотчлист ✓','ok');loaded.watch=false;}

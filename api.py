@@ -63,6 +63,28 @@ TOP_POPULAR = [
 _image_cache: dict = {}
 
 
+def fetch_skin_image(name: str) -> str:
+    """Получает URL изображения скина из Steam search (с кэшем)."""
+    if name in _image_cache:
+        return _image_cache[name]
+    try:
+        url = "https://steamcommunity.com/market/search/render/"
+        params = {"appid": 730, "query": name, "count": 1, "norender": 1, "currency": 5}
+        r = requests.get(url, params=params, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        time.sleep(0.3)
+        data = r.json()
+        results = data.get("results", [])
+        if results:
+            asset = results[0].get("asset_description", {})
+            if asset.get("icon_url"):
+                image = f"https://steamcommunity-a.akamaihd.net/economy/image/{asset['icon_url']}/128x96"
+                _image_cache[name] = image
+                return image
+    except Exception:
+        pass
+    return ""
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def parse_price_value(price_str: str) -> float:
@@ -352,13 +374,13 @@ def route_home():
     expensive = []
     for name in TOP_EXPENSIVE[:8]:
         p = get_price_steam(name, currency)
-        if p:
+        if p and p["lowest_price"] > 0:
             expensive.append({
                 "name": name,
                 "lowest_price": p["lowest_price"],
                 "median_price": p["median_price"],
                 "volume": p["volume"],
-                "image": _image_cache.get(name, ""),
+                "image": fetch_skin_image(name),
                 "change": None,
             })
 
@@ -366,13 +388,13 @@ def route_home():
     popular = []
     for name in TOP_POPULAR[:8]:
         p = get_price_steam(name, currency)
-        if p:
+        if p and p["lowest_price"] > 0:
             popular.append({
                 "name": name,
                 "lowest_price": p["lowest_price"],
                 "median_price": p["median_price"],
                 "volume": p["volume"],
-                "image": _image_cache.get(name, ""),
+                "image": fetch_skin_image(name),
                 "change": None,
             })
 
