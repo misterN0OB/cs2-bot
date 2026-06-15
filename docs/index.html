@@ -146,8 +146,10 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
 .watch-hdr{display:flex;justify-content:space-between;align-items:flex-start}
 .watch-name{font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-right:6px}
-.watch-del{background:none;color:var(--text3);font-size:15px;padding:0 3px;transition:color .15s;flex-shrink:0}
+.watch-del{background:none;color:var(--text3);font-size:20px;padding:2px 6px;transition:color .15s;flex-shrink:0;line-height:1}
 .watch-del:hover{color:var(--red)}
+.port-del{background:none;color:var(--text3);font-size:20px;padding:2px 6px;transition:color .15s;flex-shrink:0;line-height:1}
+.port-del:hover{color:var(--red)}
 .watch-body{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .watch-cond{font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace}
 .watch-cond span{color:var(--orange);font-weight:700}
@@ -761,6 +763,7 @@ async function loadPortfolio() {
       <div class="port-info"><div class="port-name">${esc(it.name)}</div><div class="port-bought">куплено: ${fmt(it.buy_price)} ${SYM}</div></div>
       <div class="port-right"><div class="port-cur">${fmt(cur)} ${SYM}</div>
         <div class="port-pnl ${p>=0?'pos':'neg'}">${p>=0?'+':''}${fmt(p)} (${p>=0?'+':''}${pp}%)</div></div>
+      <button class="port-del" onclick="removePortItem(${it.id},this)">✕</button>
     </div>`;
   }).join('');
   el.innerHTML = sum + items + `<button class="add-btn" onclick="switchSection('search')">+ ДОБАВИТЬ СКИН</button>` + premiumBanner();
@@ -822,6 +825,12 @@ async function addWatch(name, price) {
   const r = await api('/api/watchlist/add',{name,condition:'below',threshold});
   if(r?.ok){showToast('Добавлено в вотчлист ✓','ok');loaded.watch=false;}
   else showToast('Ошибка. Попробуй в боте.','err');
+}
+async function removePortItem(id, btn) {
+  btn.closest('.port-item').style.opacity='.4';
+  const r=await api('/api/portfolio/remove',{id});
+  if(r?.ok){loaded.portfolio=false;loadPortfolio();showToast('Удалено из портфеля','ok');}
+  else{btn.closest('.port-item').style.opacity='1';showToast('Ошибка','err');}
 }
 async function removeWatchItem(id, btn) {
   btn.closest('.watch-item').style.opacity='.4';

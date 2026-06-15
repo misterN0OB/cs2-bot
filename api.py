@@ -376,6 +376,20 @@ def route_portfolio_add():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/portfolio/remove")
+def route_portfolio_remove():
+    user_id = request.args.get("user_id", 0, type=int)
+    item_id = request.args.get("id", 0, type=int)
+    if not user_id or not item_id:
+        return jsonify({"ok": False}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute("DELETE FROM portfolio WHERE id=? AND user_id=?", (item_id, user_id))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/watchlist")
 def route_watchlist():
     user_id = request.args.get("user_id", 0, type=int)
