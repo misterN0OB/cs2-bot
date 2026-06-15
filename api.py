@@ -39,14 +39,14 @@ CURRENCIES = {
 
 # Топ популярных скинов (статичный список для /api/top)
 TOP_EXPENSIVE = [
-    "AWP | Dragon Lore (Factory New)",
-    "AK-47 | Wild Lotus (Factory New)",
-    "AWP | Gungnir (Factory New)",
     "M4A4 | Howl (Factory New)",
-    "AK-47 | Gold Arabesque (Factory New)",
     "Karambit | Doppler (Factory New)",
-    "AWP | Medusa (Factory New)",
+    "Butterfly Knife | Doppler (Factory New)",
+    "Karambit | Fade (Factory New)",
+    "Karambit | Tiger Tooth (Factory New)",
+    "M9 Bayonet | Doppler (Factory New)",
     "AK-47 | Fire Serpent (Field-Tested)",
+    "AWP | Medusa (Factory New)",
 ]
 
 TOP_POPULAR = [
@@ -461,7 +461,9 @@ def route_home():
 
     # Строим данные (может занять 10-20 сек при холодном старте)
     data = _build_home_data(currency)
-    _home_cache[currency] = (data, now)
+    # Кэшируем только если получили хотя бы 3 скина — иначе повторим при следующем запросе
+    if len(data.get("expensive", [])) >= 3:
+        _home_cache[currency] = (data, now)
     return jsonify(data)
 
 
