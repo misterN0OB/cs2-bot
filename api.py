@@ -97,6 +97,7 @@ def _build_home_data(currency: str) -> dict:
                 SELECT skin_name, MIN(price) as price_old, MAX(price) as price_new
                 FROM price_history
                 WHERE recorded_at > datetime('now', '-25 hours')
+                  AND skin_name LIKE '%|%'
                 GROUP BY skin_name
                 HAVING COUNT(*) >= 2 AND MIN(price) > 0
                 ORDER BY (MAX(price) - MIN(price)) / MIN(price) DESC
