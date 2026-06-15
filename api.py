@@ -41,12 +41,12 @@ CURRENCIES = {
 TOP_EXPENSIVE = [
     "AK-47 | Fire Serpent (Field-Tested)",
     "AWP | Medusa (Factory New)",
-    "Karambit | Fade (Factory New)",
-    "Karambit | Tiger Tooth (Factory New)",
-    "Butterfly Knife | Fade (Factory New)",
-    "M9 Bayonet | Fade (Factory New)",
-    "Karambit | Marble Fade (Factory New)",
     "Desert Eagle | Blaze (Factory New)",
+    "AWP | Asiimov (Factory New)",
+    "M4A4 | Asiimov (Factory New)",
+    "AK-47 | Vulcan (Factory New)",
+    "AK-47 | Bloodsport (Factory New)",
+    "AWP | Lightning Strike (Factory New)",
 ]
 
 TOP_POPULAR = [

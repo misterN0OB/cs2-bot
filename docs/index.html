@@ -658,6 +658,7 @@ document.getElementById('searchSuggestions').innerHTML = QUICK_SUGGESTIONS.map(s
   `<span class="suggest-item" onclick="quickSearch('${s}')">${s}</span>`).join('');
 
 function quickSearch(name) {
+  switchSection('search');
   searchInput.value = name;
   doSearch(name);
 }
