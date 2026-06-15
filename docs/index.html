@@ -718,8 +718,10 @@ document.getElementById('portModalConfirm').onclick = async()=>{
   if(!userId){showToast('Открой через Telegram','err');closePortModal();return;}
   const p=parseFloat(document.getElementById('portModalPrice').value);
   if(!pendingSkinName||!p||p<=0){showToast('Введи корректную цену','err');return;}
+  // Сохраняем имя ДО закрытия модала (closePortModal сбрасывает pendingSkinName)
+  const skinName = pendingSkinName;
   closePortModal();
-  const r=await api('/api/portfolio/add',{name:pendingSkinName,buy_price:p});
+  const r=await api('/api/portfolio/add',{name:skinName,buy_price:p});
   if(r?.ok){showToast('Добавлено в портфель ✓','ok');loaded.portfolio=false;}
   else showToast('Ошибка добавления','err');
 };

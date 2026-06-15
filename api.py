@@ -22,7 +22,7 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)  # разрешаем запросы из Telegram WebApp
 
-DB_FILE = "cs2bot.db"
+DB_FILE = "bot_data.db"
 
 # ── Кэш цен (30 минут) ────────────────────────────────────────────────────────
 _price_cache: dict = {}
