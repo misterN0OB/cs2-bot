@@ -182,6 +182,21 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .home-card-h::before{content:'';display:block;height:2px;margin:-10px -10px 8px;background:linear-gradient(90deg,var(--orange),transparent)}
 .hcard-img{width:100%;height:64px;background:var(--card2);display:flex;align-items:center;justify-content:center;margin-bottom:6px}
 .hcard-img img{width:100%;height:100%;object-fit:contain}
+/* QUICK CHIPS */
+.quick-chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.quick-chips::-webkit-scrollbar{display:none}
+.quick-chip{flex-shrink:0;background:var(--card2);border:1px solid var(--border);color:var(--text);
+  font-size:11px;font-weight:600;padding:5px 10px;letter-spacing:.5px;white-space:nowrap;
+  clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px));
+  transition:border-color .15s,color .15s}
+.quick-chip:active{border-color:var(--orange);color:var(--orange)}
+/* TIP BLOCK */
+.home-tip{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);
+  border-left:3px solid var(--orange);padding:10px 12px;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+.tip-icon{font-size:20px;flex-shrink:0;line-height:1.2}
+.tip-title{font-size:12px;font-weight:700;color:var(--orange);letter-spacing:.5px;margin-bottom:3px}
+.tip-body{font-size:11px;color:var(--text2);line-height:1.4}
 .hcard-name{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hcard-price{font-size:13px;font-weight:700;color:var(--orange);font-family:'Share Tech Mono',monospace;margin-top:2px}
 .hcard-change{font-size:10px;font-weight:700;font-family:'Share Tech Mono',monospace;margin-top:1px}
@@ -502,10 +517,10 @@ async function loadUserStatus() {
 }
 
 // ── API ───────────────────────────────────────────────────────
-async function api(path, params={}) {
+async function api(path, params={}, timeout=12000) {
   const q = new URLSearchParams({...params, user_id: userId||0, currency: CUR});
   try {
-    const r = await fetch(`${API}${path}?${q}`, {signal: AbortSignal.timeout(9000)});
+    const r = await fetch(`${API}${path}?${q}`, {signal: AbortSignal.timeout(timeout)});
     if (!r.ok) throw new Error(r.status);
     return await r.json();
   } catch(e) { console.warn('API:', path, e); return null; }
@@ -536,30 +551,74 @@ function loadSection(sec) {
 }
 
 // ── HOME ──────────────────────────────────────────────────────
+const QUICK_WEAPONS = [
+  {label:'AK-47',emoji:'🔴'},{label:'AWP',emoji:'🟡'},{label:'M4A4',emoji:'🔵'},
+  {label:'Karambit',emoji:'🟢'},{label:'Butterfly Knife',emoji:'⚪'},
+  {label:'Glock-18',emoji:'🟠'},{label:'Desert Eagle',emoji:'💜'},{label:'USP-S',emoji:'⚫'},
+];
+
+function renderHomeQuick() {
+  return `<div class="home-block">
+    <div class="sec-hdr"><div class="sec-title">🎯 Быстрый поиск</div></div>
+    <div class="quick-chips">${QUICK_WEAPONS.map(w=>
+      `<button class="quick-chip" onclick="quickSearch('${w.label}')">${w.emoji} ${w.label}</button>`
+    ).join('')}</div>
+  </div>`;
+}
+
 async function loadHome() {
   const el = document.getElementById('homeContent');
-  el.innerHTML = `<div class="loading">ЗАГРУЗКА</div>`;
-  const data = await api('/api/home');
-  if (!data) { el.innerHTML = `<div class="empty"><div class="empty-icon">📡</div><div class="empty-text">Нет соединения с сервером</div></div>`; return; }
-  let html = '';
+  // Сразу показываем быстрые чипы — без ожидания API
+  el.innerHTML = renderHomeQuick() + `<div class="loading" style="margin:20px 0">ЗАГРУЗКА ЦЕН...</div>`;
+
+  const data = await api('/api/home', {}, 28000);   // 28с таймаут — сервер параллелит запросы
+
+  if (!data) {
+    loaded.home = false;   // сброс — чтобы попробовать снова при следующем визите
+    el.innerHTML = renderHomeQuick() + `
+      <div class="empty">
+        <div class="empty-icon">📡</div>
+        <div class="empty-text">Нет соединения с сервером<br>
+          <span style="font-size:11px;color:var(--text3)">Steam API загружается, попробуй позже</span>
+        </div>
+        <button class="btn btn-secondary" style="margin-top:12px;padding:8px 20px"
+          onclick="loaded.home=false;switchSection('search');switchSection('home')">↻ Обновить</button>
+      </div>`;
+    return;
+  }
+
+  let html = renderHomeQuick();
+
   if (data.trending?.length) {
     html += `<div class="home-block">
-      <div class="sec-hdr"><div class="sec-title">📈 Рост за 24ч</div></div>
+      <div class="sec-hdr"><div class="sec-title">📈 Рост за 24ч</div><div class="sec-badge">${data.trending.length} скинов</div></div>
       <div class="home-scroll">${data.trending.map(homeCardHTML).join('')}</div>
     </div>`;
   }
   if (data.expensive?.length) {
     html += `<div class="home-block">
-      <div class="sec-hdr"><div class="sec-title">💎 Самые дорогие</div></div>
+      <div class="sec-hdr"><div class="sec-title">💎 Самые дорогие</div><div class="sec-badge">${data.expensive.length} скинов</div></div>
       <div class="home-scroll">${data.expensive.map(homeCardHTML).join('')}</div>
     </div>`;
   }
   if (data.popular?.length) {
     html += `<div class="home-block">
-      <div class="sec-hdr"><div class="sec-title">🔥 Популярные</div></div>
+      <div class="sec-hdr"><div class="sec-title">🔥 Популярные</div><div class="sec-badge">${data.popular.length} скинов</div></div>
       <div class="home-scroll">${data.popular.map(homeCardHTML).join('')}</div>
     </div>`;
   }
+
+  // Блок-подсказка если данных мало
+  html += `<div class="home-block">
+    <div class="home-tip">
+      <div class="tip-icon">💡</div>
+      <div class="tip-text">
+        <div class="tip-title">Как отслеживать скин?</div>
+        <div class="tip-body">Найди скин через поиск → нажми «Следить» → бот уведомит когда цена упадёт</div>
+      </div>
+    </div>
+  </div>`;
+
   html += premiumBanner();
   el.innerHTML = html;
   el.querySelectorAll('.home-card-h').forEach(c => {

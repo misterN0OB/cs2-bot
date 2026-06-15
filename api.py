@@ -8,6 +8,7 @@ import sqlite3
 import requests
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -61,6 +62,24 @@ TOP_POPULAR = [
 
 # Кэш изображений — заполняется при первом поиске каждого скина
 _image_cache: dict = {}
+
+
+def _fetch_home_item(name: str, currency: str) -> dict | None:
+    """Параллельный помощник для /api/home — цена + картинка одного скина."""
+    try:
+        p = get_price_steam(name, currency)
+        if p and p.get("lowest_price", 0) > 0:
+            return {
+                "name":         name,
+                "lowest_price": p["lowest_price"],
+                "median_price": p["median_price"],
+                "volume":       p["volume"],
+                "image":        fetch_skin_image(name),
+                "change":       None,
+            }
+    except Exception:
+        pass
+    return None
 
 
 def fetch_skin_image(name: str) -> str:
@@ -379,33 +398,14 @@ def route_home():
     """Данные для главной страницы: trending, expensive, popular."""
     currency = request.args.get("currency", "RUB").upper()
 
-    # Топ дорогих (первые 8)
-    expensive = []
-    for name in TOP_EXPENSIVE[:8]:
-        p = get_price_steam(name, currency)
-        if p and p["lowest_price"] > 0:
-            expensive.append({
-                "name": name,
-                "lowest_price": p["lowest_price"],
-                "median_price": p["median_price"],
-                "volume": p["volume"],
-                "image": fetch_skin_image(name),
-                "change": None,
-            })
+    # Топ дорогих и популярных — параллельно (до 5 потоков)
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        exp_futures = list(ex.map(lambda n: _fetch_home_item(n, currency), TOP_EXPENSIVE[:8]))
+    expensive = [r for r in exp_futures if r]
 
-    # Топ популярных (первые 8)
-    popular = []
-    for name in TOP_POPULAR[:8]:
-        p = get_price_steam(name, currency)
-        if p and p["lowest_price"] > 0:
-            popular.append({
-                "name": name,
-                "lowest_price": p["lowest_price"],
-                "median_price": p["median_price"],
-                "volume": p["volume"],
-                "image": fetch_skin_image(name),
-                "change": None,
-            })
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        pop_futures = list(ex.map(lambda n: _fetch_home_item(n, currency), TOP_POPULAR[:8]))
+    popular = [r for r in pop_futures if r]
 
     # Топ роста за 24 часа — из price_history
     trending = []
@@ -413,12 +413,12 @@ def route_home():
         with sqlite3.connect(DB_FILE) as conn:
             # Берём скины у которых есть минимум 2 записи за последние 25 часов
             rows = conn.execute("""
-                SELECT item_name,
+                SELECT skin_name,
                        MIN(price) as price_old,
                        MAX(price) as price_new
                 FROM price_history
                 WHERE recorded_at > datetime('now', '-25 hours')
-                GROUP BY item_name
+                GROUP BY skin_name
                 HAVING COUNT(*) >= 2 AND price_old > 0
                 ORDER BY (MAX(price) - MIN(price)) / MIN(price) DESC
                 LIMIT 8
