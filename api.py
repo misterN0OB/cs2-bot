@@ -39,14 +39,14 @@ CURRENCIES = {
 
 # Топ популярных скинов (статичный список для /api/top)
 TOP_EXPENSIVE = [
-    "M4A4 | Howl (Factory New)",
-    "Karambit | Doppler (Factory New)",
-    "Butterfly Knife | Doppler (Factory New)",
-    "Karambit | Fade (Factory New)",
-    "Karambit | Tiger Tooth (Factory New)",
-    "M9 Bayonet | Doppler (Factory New)",
     "AK-47 | Fire Serpent (Field-Tested)",
     "AWP | Medusa (Factory New)",
+    "Karambit | Fade (Factory New)",
+    "Karambit | Tiger Tooth (Factory New)",
+    "Butterfly Knife | Fade (Factory New)",
+    "M9 Bayonet | Fade (Factory New)",
+    "Karambit | Marble Fade (Factory New)",
+    "Desert Eagle | Blaze (Factory New)",
 ]
 
 TOP_POPULAR = [
@@ -124,12 +124,18 @@ def _build_home_data(currency: str) -> dict:
 
 def _prewarm_cache():
     """Прогрев кэша при старте сервера — в фоновом потоке."""
-    time.sleep(3)  # ждём пока Flask поднимется
+    time.sleep(5)  # ждём пока Flask поднимется
     print("Prewarming home cache...")
     try:
         data = _build_home_data("RUB")
-        _home_cache["RUB"] = (data, time.time())
-        print(f"Cache warmed: {len(data['expensive'])} expensive, {len(data['popular'])} popular")
+        exp_count = len(data['expensive'])
+        pop_count = len(data['popular'])
+        print(f"Cache warmed: {exp_count} expensive, {pop_count} popular")
+        # Кэшируем только если достаточно данных
+        if exp_count >= 3 and pop_count >= 3:
+            _home_cache["RUB"] = (data, time.time())
+        else:
+            print(f"Not enough data to cache (exp={exp_count}, pop={pop_count}), will retry on request")
     except Exception as e:
         print(f"Prewarm error: {e}")
 
