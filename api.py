@@ -257,7 +257,7 @@ def route_portfolio():
     try:
         with sqlite3.connect(DB_FILE) as conn:
             rows = conn.execute(
-                "SELECT id, item_name, buy_price, added_at FROM portfolio WHERE user_id=? ORDER BY added_at DESC",
+                "SELECT id, skin_name, purchase_price, added_at FROM portfolio WHERE user_id=? ORDER BY added_at DESC",
                 (user_id,)
             ).fetchall()
         items = []
@@ -287,7 +287,7 @@ def route_portfolio_add():
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.execute(
-                "INSERT INTO portfolio (user_id, item_name, buy_price) VALUES (?,?,?)",
+                "INSERT INTO portfolio (user_id, skin_name, purchase_price) VALUES (?,?,?)",
                 (user_id, name, buy_price)
             )
         return jsonify({"ok": True})
@@ -303,10 +303,16 @@ def route_watchlist():
     try:
         with sqlite3.connect(DB_FILE) as conn:
             rows = conn.execute(
-                "SELECT id, item_name, condition, threshold FROM watchlist WHERE user_id=?",
+                "SELECT id, skin_name, price_below, price_above FROM watches WHERE user_id=?",
                 (user_id,)
             ).fetchall()
-        items = [{"id": r[0], "name": r[1], "condition": r[2], "threshold": r[3]} for r in rows]
+        items = []
+        for r in rows:
+            if r[2] is not None:
+                condition, threshold = "below", r[2]
+            else:
+                condition, threshold = "above", r[3] or 0
+            items.append({"id": r[0], "name": r[1], "condition": condition, "threshold": threshold})
         return jsonify({"items": items})
     except Exception as e:
         return jsonify({"items": []})
@@ -320,11 +326,13 @@ def route_watchlist_add():
     threshold = request.args.get("threshold", 0, type=float)
     if not user_id or not name:
         return jsonify({"ok": False}), 400
+    price_below = threshold if condition == "below" else None
+    price_above = threshold if condition == "above" else None
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.execute(
-                "INSERT INTO watchlist (user_id, item_name, condition, threshold) VALUES (?,?,?,?)",
-                (user_id, name, condition, threshold)
+                "INSERT INTO watches (user_id, skin_name, price_below, price_above) VALUES (?,?,?,?)",
+                (user_id, name, price_below, price_above)
             )
         return jsonify({"ok": True})
     except Exception as e:
@@ -339,7 +347,7 @@ def route_watchlist_remove():
         return jsonify({"ok": False}), 400
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            conn.execute("DELETE FROM watchlist WHERE id=? AND user_id=?", (item_id, user_id))
+            conn.execute("DELETE FROM watches WHERE id=? AND user_id=?", (item_id, user_id))
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False}), 500
