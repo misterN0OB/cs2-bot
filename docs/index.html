@@ -694,6 +694,7 @@ async function loadPortfolio() {
     const cur=it.current_price||it.buy_price, p=cur-it.buy_price;
     const pp=it.buy_price>0?((p/it.buy_price)*100).toFixed(1):'0.0';
     return `<div class="port-item">
+      <div class="simg" style="width:52px;height:40px;flex-shrink:0">${it.image?`<img src="${it.image}" loading="lazy">`:'🔫'}</div>
       <div class="port-info"><div class="port-name">${esc(it.name)}</div><div class="port-bought">куплено: ${fmt(it.buy_price)} ${SYM}</div></div>
       <div class="port-right"><div class="port-cur">${fmt(cur)} ${SYM}</div>
         <div class="port-pnl ${p>=0?'pos':'neg'}">${p>=0?'+':''}${fmt(p)} (${p>=0?'+':''}${pp}%)</div></div>
@@ -737,14 +738,17 @@ async function loadWatch() {
     return;
   }
   el.innerHTML = data.items.map(it=>`
-    <div class="watch-item">
-      <div class="watch-hdr">
-        <div class="watch-name">${esc(it.name)}</div>
-        <button class="watch-del" onclick="removeWatchItem(${it.id},this)">✕</button>
-      </div>
-      <div class="watch-body">
-        <div class="watch-cond">если ${it.condition==='below'?'ниже':'выше'} <span>${fmt(it.threshold)} ${SYM}</span></div>
-        <div class="watch-status"><div class="dot dot-g"></div><span style="color:var(--text3)">слежу</span></div>
+    <div class="watch-item" style="display:flex;align-items:center;gap:10px">
+      <div class="simg" style="width:52px;height:40px;flex-shrink:0">${it.image?`<img src="${it.image}" loading="lazy">`:'🔫'}</div>
+      <div style="flex:1;min-width:0">
+        <div class="watch-hdr">
+          <div class="watch-name">${esc(it.name)}</div>
+          <button class="watch-del" onclick="removeWatchItem(${it.id},this)">✕</button>
+        </div>
+        <div class="watch-body">
+          <div class="watch-cond">если ${it.condition==='below'?'ниже':'выше'} <span>${fmt(it.threshold)} ${SYM}</span></div>
+          <div class="watch-status"><div class="dot dot-g"></div><span style="color:var(--text3)">слежу</span></div>
+        </div>
       </div>
     </div>`).join('') + premiumBanner();
 }

@@ -270,6 +270,7 @@ def route_portfolio():
                 "buy_price":     buy_price,
                 "current_price": price_data["lowest_price"] if price_data else buy_price,
                 "added_at":      added_at,
+                "image":         fetch_skin_image(name),
             })
         return jsonify({"items": items})
     except Exception as e:
@@ -312,7 +313,7 @@ def route_watchlist():
                 condition, threshold = "below", r[2]
             else:
                 condition, threshold = "above", r[3] or 0
-            items.append({"id": r[0], "name": r[1], "condition": condition, "threshold": threshold})
+            items.append({"id": r[0], "name": r[1], "condition": condition, "threshold": threshold, "image": fetch_skin_image(r[1])})
         return jsonify({"items": items})
     except Exception as e:
         return jsonify({"items": []})
