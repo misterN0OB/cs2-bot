@@ -634,7 +634,7 @@ function homeCardHTML(item) {
   const changeClass = (item.change||0) >= 0 ? 'pos' : 'neg';
   const changeText  = item.change != null ? `${item.change>=0?'+':''}${item.change}%` : '';
   return `<div class="home-card-h" data-name="${esc(item.name)}">
-    <div class="hcard-img">${item.image?`<img src="${item.image}" loading="lazy">`:'🔫'}</div>
+    <div class="hcard-img">${item.image?`<img src="${item.image}" loading="eager">`:'🔫'}</div>
     <div class="hcard-name">${esc(shortName(item.name))}</div>
     <div class="hcard-price">${fmt(item.lowest_price)} ${SYM}</div>
     ${changeText?`<div class="hcard-change ${changeClass}">${changeText}</div>`:''}
@@ -703,7 +703,7 @@ function skinCardHTML(item) {
   const p = item.lowest_price ? `<div class="sprice-low">${fmt(item.lowest_price)} ${SYM}</div><div class="sprice-med">ср. ${fmt(item.median_price)} ${SYM}</div>` : `<div class="sprice-low" style="color:var(--text3)">—</div>`;
   return `<div class="card" data-name="${esc(item.name)}" data-low="${item.lowest_price||0}" data-med="${item.median_price||0}">
     <div class="card-inner">
-      <div class="simg">${item.image?`<img src="${item.image}" loading="lazy">`:`<div class="simg-ph">🔫</div>`}</div>
+      <div class="simg">${item.image?`<img src="${item.image}" loading="eager">`:`<div class="simg-ph">🔫</div>`}</div>
       <div style="flex:1;min-width:0"><div class="sname">${esc(item.name)}</div><div class="smeta">VOL: ${item.volume||'—'}</div></div>
       <div class="sprice">${p}</div>
     </div>
@@ -753,7 +753,7 @@ async function loadPortfolio() {
     const cur=it.current_price||it.buy_price, p=cur-it.buy_price;
     const pp=it.buy_price>0?((p/it.buy_price)*100).toFixed(1):'0.0';
     return `<div class="port-item">
-      <div class="simg" style="width:52px;height:40px;flex-shrink:0">${it.image?`<img src="${it.image}" loading="lazy">`:'🔫'}</div>
+      <div class="simg" style="width:52px;height:40px;flex-shrink:0">${it.image?`<img src="${it.image}" loading="eager">`:'🔫'}</div>
       <div class="port-info"><div class="port-name">${esc(it.name)}</div><div class="port-bought">куплено: ${fmt(it.buy_price)} ${SYM}</div></div>
       <div class="port-right"><div class="port-cur">${fmt(cur)} ${SYM}</div>
         <div class="port-pnl ${p>=0?'pos':'neg'}">${p>=0?'+':''}${fmt(p)} (${p>=0?'+':''}${pp}%)</div></div>
@@ -798,7 +798,7 @@ async function loadWatch() {
   }
   el.innerHTML = data.items.map(it=>`
     <div class="watch-item" style="display:flex;align-items:center;gap:10px">
-      <div class="simg" style="width:52px;height:40px;flex-shrink:0">${it.image?`<img src="${it.image}" loading="lazy">`:'🔫'}</div>
+      <div class="simg" style="width:52px;height:40px;flex-shrink:0">${it.image?`<img src="${it.image}" loading="eager">`:'🔫'}</div>
       <div style="flex:1;min-width:0">
         <div class="watch-hdr">
           <div class="watch-name">${esc(it.name)}</div>

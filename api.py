@@ -8,7 +8,7 @@ import sqlite3
 import requests
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
+import threading
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -63,23 +63,77 @@ TOP_POPULAR = [
 # Кэш изображений — заполняется при первом поиске каждого скина
 _image_cache: dict = {}
 
+# Кэш главной страницы (TTL 30 мин)
+_home_cache: dict = {}
+HOME_CACHE_TTL = 1800
 
-def _fetch_home_item(name: str, currency: str) -> dict | None:
-    """Параллельный помощник для /api/home — цена + картинка одного скина."""
-    try:
+
+def _build_home_data(currency: str) -> dict:
+    """Строит данные главной страницы — последовательно, с кэшем Steam."""
+    expensive = []
+    for name in TOP_EXPENSIVE[:8]:
         p = get_price_steam(name, currency)
         if p and p.get("lowest_price", 0) > 0:
-            return {
-                "name":         name,
-                "lowest_price": p["lowest_price"],
-                "median_price": p["median_price"],
-                "volume":       p["volume"],
-                "image":        fetch_skin_image(name),
-                "change":       None,
-            }
-    except Exception:
-        pass
-    return None
+            expensive.append({
+                "name": name, "lowest_price": p["lowest_price"],
+                "median_price": p["median_price"], "volume": p["volume"],
+                "image": fetch_skin_image(name), "change": None,
+            })
+
+    popular = []
+    for name in TOP_POPULAR[:8]:
+        p = get_price_steam(name, currency)
+        if p and p.get("lowest_price", 0) > 0:
+            popular.append({
+                "name": name, "lowest_price": p["lowest_price"],
+                "median_price": p["median_price"], "volume": p["volume"],
+                "image": fetch_skin_image(name), "change": None,
+            })
+
+    trending = []
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            rows = conn.execute("""
+                SELECT skin_name, MIN(price) as price_old, MAX(price) as price_new
+                FROM price_history
+                WHERE recorded_at > datetime('now', '-25 hours')
+                GROUP BY skin_name
+                HAVING COUNT(*) >= 2 AND MIN(price) > 0
+                ORDER BY (MAX(price) - MIN(price)) / MIN(price) DESC
+                LIMIT 8
+            """).fetchall()
+            for row in rows:
+                name, old_p, new_p = row
+                change = round(((new_p - old_p) / old_p) * 100, 1)
+                if abs(change) < 0.5:
+                    continue
+                p = get_price_steam(name, currency)
+                trending.append({
+                    "name": name,
+                    "lowest_price": p["lowest_price"] if p else new_p,
+                    "median_price": p["median_price"] if p else new_p,
+                    "volume": p["volume"] if p else "—",
+                    "image": fetch_skin_image(name),
+                    "change": change,
+                })
+    except Exception as e:
+        print(f"Trending error: {e}")
+
+    return {"trending": trending, "expensive": expensive, "popular": popular}
+
+
+def _prewarm_cache():
+    """Прогрев кэша при старте сервера — в фоновом потоке."""
+    time.sleep(3)  # ждём пока Flask поднимется
+    print("Prewarming home cache...")
+    try:
+        data = _build_home_data("RUB")
+        _home_cache["RUB"] = (data, time.time())
+        print(f"Cache warmed: {len(data['expensive'])} expensive, {len(data['popular'])} popular")
+    except Exception as e:
+        print(f"Prewarm error: {e}")
+
+threading.Thread(target=_prewarm_cache, daemon=True).start()
 
 
 def fetch_skin_image(name: str) -> str:
@@ -176,7 +230,7 @@ def _price_from_db(name: str) -> dict | None:
     try:
         with sqlite3.connect(DB_FILE) as conn:
             row = conn.execute(
-                "SELECT price FROM price_history WHERE item_name=? ORDER BY recorded_at DESC LIMIT 1",
+                "SELECT price FROM price_history WHERE skin_name=? ORDER BY recorded_at DESC LIMIT 1",
                 (name,)
             ).fetchone()
             if row:
@@ -191,7 +245,7 @@ def _save_price_history(name: str, price: float):
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.execute(
-                "INSERT INTO price_history (item_name, price) VALUES (?, ?)",
+                "INSERT INTO price_history (skin_name, price) VALUES (?, ?)",
                 (name, price)
             )
     except Exception:
@@ -397,54 +451,18 @@ def route_top():
 def route_home():
     """Данные для главной страницы: trending, expensive, popular."""
     currency = request.args.get("currency", "RUB").upper()
+    now = time.time()
 
-    # Топ дорогих и популярных — параллельно (до 5 потоков)
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        exp_futures = list(ex.map(lambda n: _fetch_home_item(n, currency), TOP_EXPENSIVE[:8]))
-    expensive = [r for r in exp_futures if r]
+    # Возвращаем из кэша если свежий (30 мин)
+    if currency in _home_cache:
+        data, ts = _home_cache[currency]
+        if now - ts < HOME_CACHE_TTL:
+            return jsonify(data)
 
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        pop_futures = list(ex.map(lambda n: _fetch_home_item(n, currency), TOP_POPULAR[:8]))
-    popular = [r for r in pop_futures if r]
-
-    # Топ роста за 24 часа — из price_history
-    trending = []
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            # Берём скины у которых есть минимум 2 записи за последние 25 часов
-            rows = conn.execute("""
-                SELECT skin_name,
-                       MIN(price) as price_old,
-                       MAX(price) as price_new
-                FROM price_history
-                WHERE recorded_at > datetime('now', '-25 hours')
-                GROUP BY skin_name
-                HAVING COUNT(*) >= 2 AND price_old > 0
-                ORDER BY (MAX(price) - MIN(price)) / MIN(price) DESC
-                LIMIT 8
-            """).fetchall()
-            for row in rows:
-                name, old_p, new_p = row
-                change = round(((new_p - old_p) / old_p) * 100, 1)
-                if abs(change) < 0.5:
-                    continue  # игнорируем незначительные
-                p = get_price_steam(name, currency)
-                trending.append({
-                    "name": name,
-                    "lowest_price": p["lowest_price"] if p else new_p,
-                    "median_price": p["median_price"] if p else new_p,
-                    "volume": p["volume"] if p else "—",
-                    "image": _image_cache.get(name, ""),
-                    "change": change,
-                })
-    except Exception as e:
-        print(f"Trending error: {e}")
-
-    return jsonify({
-        "trending": trending,
-        "expensive": expensive,
-        "popular": popular,
-    })
+    # Строим данные (может занять 10-20 сек при холодном старте)
+    data = _build_home_data(currency)
+    _home_cache[currency] = (data, now)
+    return jsonify(data)
 
 
 @app.route("/api/user/status")
