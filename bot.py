@@ -24,6 +24,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
+    KeyboardButton,
     LabeledPrice,
     WebAppInfo,
 )
@@ -116,7 +117,10 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
         ["Добавить отслеживание", "Топ скины"],
         ["Портфель", "Настройки"],
         ["Написать нам", "Поделиться с другом"],
-        ["📊 Открыть трекер"],
+        [KeyboardButton(
+            "📊 Открыть трекер",
+            web_app=WebAppInfo(url="https://mistern0ob.github.io/cs2-bot/")
+        )],
     ],
     resize_keyboard=True
 )
