@@ -849,6 +849,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=build_watch_keyboard(user_id, skin_name, threshold, symbol)
         )
 
+    # --- Без состояния и без совпадения с кнопкой: пользователь просто
+    #     написал название скина текстом (не через /price и не через кнопку
+    #     "Проверить цену"). Чтобы это не "проваливалось в пустоту",
+    #     воспринимаем такой текст как запрос цены напрямую. ---
+    else:
+        record_activity(update.effective_user.id)
+        currency = get_user_currency(update.effective_user.id)
+        await show_price_for_skin(update, text, currency=currency)
+
 
 # =============================================================
 # ПОРТФЕЛЬ — вспомогательная функция отображения
